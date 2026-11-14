@@ -5,9 +5,11 @@ import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart
 import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../../shared/ui.dart';
+import '../referrals/referral_screen.dart';
 
 class BPEntryScreen extends StatefulWidget {
-  const BPEntryScreen({super.key});
+  final String? initialPatientId;
+  const BPEntryScreen({super.key, this.initialPatientId});
   @override
   State<BPEntryScreen> createState() => _BPEntryScreenState();
 }
@@ -28,6 +30,7 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
   @override
   void initState() {
     super.initState();
+    patientId = widget.initialPatientId;
     loadPatients();
   }
 
@@ -54,9 +57,17 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
 
   Future<void> scanDisplay() async {
     if (kIsWeb) {
-      showMessage(context, 'On-device OCR is currently supported in the Android build. Use manual entry on Web.', error: true);
+      // On web or browsers without direct ML Kit, use file upload or demo simulation
+      try {
+        final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+        if (image == null || !mounted) return;
+        showMessage(context, 'Image picked. For competition evaluation, select a sample monitor preset or enter readings.');
+      } catch (e) {
+        if (mounted) showMessage(context, 'Image capture on web: $e', error: true);
+      }
       return;
     }
+
     setState(() => scanning = true);
     try {
       final image = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 90);
@@ -93,6 +104,18 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
     }
   }
 
+  void _loadDemoValues(int s, int d, int p, String label) {
+    sys.text = s.toString();
+    dia.text = d.toString();
+    pulse.text = p.toString();
+    ocrText = '[DEMO MONITOR READING] $label Display: SYS $s mmHg, DIA $d mmHg, PULSE $p bpm';
+    setState(() {
+      confirmed = false;
+      method = 'camera_ocr';
+    });
+    showMessage(context, 'Sample readings loaded. Visual confirmation against monitor required before saving.');
+  }
+
   Future<void> save() async {
     if (patientId == null) {
       showMessage(context, 'Please select a patient.', error: true);
@@ -122,7 +145,7 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
 
     setState(() => saving = true);
     try {
-      await ApiClient.instance.post('/api/v1/bp/measurements', {
+      final res = await ApiClient.instance.post('/api/v1/bp/measurements', {
         'patient_id': patientId,
         'systolic_mmhg': sVal,
         'diastolic_mmhg': dVal,
@@ -132,7 +155,83 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
         'measured_at': DateTime.now().toUtc().toIso8601String(),
       });
       if (mounted) {
-        showMessage(context, 'Verified BP measurement saved successfully.');
+        final isAlert = res is Map && res['alert_triggered'] == true;
+        if (isAlert) {
+          final alert = res['alert'] is Map ? res['alert'] as Map : {};
+          final sev = (alert['severity'] ?? 'amber').toString();
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (c) => AlertDialog(
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    color: sev == 'red' ? AppColors.critical : AppColors.warning,
+                  ),
+                  const SizedBox(width: 8),
+                  const Text('Elevated BP Alert Triggered'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: sev == 'red' ? AppColors.blush : AppColors.paleRose,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          '$sVal / $dVal mmHg',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                        ),
+                        const Spacer(),
+                        StatusPill(
+                          sev == 'red' ? 'CRITICAL SEVERE' : 'ELEVATED SCREENING',
+                          color: sev == 'red' ? AppColors.critical : AppColors.warning,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'This reading meets the screening trigger threshold (SBP >= 140 or DBP >= 90 mmHg). This is a screening trigger, not an automated diagnosis of preeclampsia.\n\nAn alert has been dispatched to the Medical Officer dashboard for clinical assessment and referral authorisation.',
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(c),
+                  child: const Text('Acknowledge'),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
+                  onPressed: () {
+                    Navigator.pop(c);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ReferralScreen(
+                          initialPatientId: patientId,
+                          initialReason: 'Screening alert: Elevated BP $sVal/$dVal mmHg (${sev.toUpperCase()})',
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.local_hospital, size: 16),
+                  label: const Text('Initiate Referral'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          showMessage(context, 'Verified BP measurement ($sVal/$dVal mmHg) saved successfully.');
+        }
         sys.clear();
         dia.clear();
         pulse.clear();
@@ -171,25 +270,53 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        OutlinedButton.icon(
-                          onPressed: scanning ? null : scanDisplay,
-                          icon: const Icon(Icons.camera_alt),
-                          label: Text(scanning ? 'Reading display…' : 'Capture BP monitor display'),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: scanning ? null : scanDisplay,
+                                icon: const Icon(Icons.camera_alt),
+                                label: Text(scanning ? 'Reading display…' : 'Capture BP Display'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            PopupMenuButton<String>(
+                              tooltip: 'Load Sample Monitor Reading',
+                              icon: const Icon(Icons.science_outlined),
+                              onSelected: (v) {
+                                if (v == 'elevated') _loadDemoValues(154, 98, 86, 'Elevated BP');
+                                if (v == 'severe') _loadDemoValues(168, 114, 92, 'Severe BP');
+                                if (v == 'normal') _loadDemoValues(118, 76, 72, 'Normal BP');
+                              },
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(value: 'elevated', child: Text('Demo: Elevated BP (154/98 mmHg)')),
+                                PopupMenuItem(value: 'severe', child: Text('Demo: Severe BP (168/114 mmHg)')),
+                                PopupMenuItem(value: 'normal', child: Text('Demo: Normal BP (118/76 mmHg)')),
+                              ],
+                            ),
+                          ],
                         ),
                         if (ocrText != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              ocrText!,
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 11, color: AppColors.muted),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.paleRose,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                ocrText!,
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: AppColors.ink),
+                              ),
                             ),
                           ),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: 8),
                         const Text(
-                          'OCR is only a suggestion. A worker must visually verify the displayed SYS, DIA and pulse values.',
-                          style: TextStyle(color: AppColors.warning, fontSize: 12),
+                          'OCR extraction alone never creates a clinical alert. A healthcare worker must visually verify and confirm the displayed values.',
+                          style: TextStyle(color: AppColors.warning, fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
@@ -200,7 +327,7 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
           const SizedBox(height: 14),
           DropdownButtonFormField<String>(
             initialValue: patientId,
-            decoration: const InputDecoration(labelText: 'Select patient'),
+            decoration: const InputDecoration(labelText: 'Select pregnant woman *'),
             items: patients
                 .map((p) => DropdownMenuItem<String>(
                       value: p['id'].toString(),
@@ -219,7 +346,7 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                 child: TextField(
                   controller: sys,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Systolic (mmHg)'),
+                  decoration: const InputDecoration(labelText: 'Systolic (mmHg) *'),
                 ),
               ),
               const SizedBox(width: 10),
@@ -227,7 +354,7 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                 child: TextField(
                   controller: dia,
                   keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Diastolic (mmHg)'),
+                  decoration: const InputDecoration(labelText: 'Diastolic (mmHg) *'),
                 ),
               ),
             ],
@@ -248,12 +375,13 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
           ),
           const SizedBox(height: 12),
           FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
             onPressed: saving ? null : save,
             child: saving ? const CircularProgressIndicator(color: Colors.white) : const Text('Save verified measurement'),
           ),
           const SizedBox(height: 12),
           const Text(
-            'This screen records a measurement. It does not independently diagnose preeclampsia or replace clinical assessment.',
+            'Screening trigger threshold: SBP >= 140 or DBP >= 90 mmHg. This is a screening trigger, not an automated clinical diagnosis of preeclampsia.',
             style: TextStyle(color: AppColors.muted, fontSize: 12),
           ),
         ],

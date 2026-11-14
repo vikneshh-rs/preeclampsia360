@@ -1,8 +1,10 @@
+from datetime import datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException, Query, Header, status
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 from .config import settings
 from .security import current_user
-from .schemas import PatientCreate, BPMeasurementCreate
+from .schemas import PatientCreate, PatientUpdate, BPMeasurementCreate, ObstetricHistoryCreate
 from .repository import supabase_admin
 from .auth import router as auth_router
 from .workflows import router as workflows_router
@@ -11,6 +13,7 @@ from .ocr import router as ocr_router
 from .authorization import (
     assert_patient_access,
     get_accessible_facility_ids,
+    get_all_facilities_map,
     get_user_assignments,
 )
 
@@ -24,7 +27,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Facility-ID"],
 )
 
@@ -160,6 +163,107 @@ def get_patient(patient_id: str, user: dict = Depends(current_user)):
     patient = assert_patient_access(db, user["sub"], patient_id, action="read")
     return patient
 
+@app.put("/api/v1/patients/{patient_id}")
+def update_patient(patient_id: str, payload: PatientUpdate, user: dict = Depends(current_user)):
+    db = supabase_admin()
+    patient = assert_patient_access(db, user["sub"], patient_id, action="patient_edit")
+    
+    update_data = {k: v for k, v in payload.model_dump(mode="json").items() if v is not None}
+    if not update_data:
+        return patient
+
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    result = db.table("patients").update(update_data).eq("id", patient_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=400, detail="Failed to update patient profile")
+
+    updated = result.data[0]
+    db.table("audit_logs").insert({
+        "actor_user_id": user["sub"],
+        "facility_id": patient.get("facility_id"),
+        "action": "patient_updated",
+        "entity_type": "patient",
+        "entity_id": patient_id,
+        "metadata": {"updated_fields": list(update_data.keys())},
+    }).execute()
+    return updated
+
+@app.get("/api/v1/patients/{patient_id}/obstetric-history")
+def get_obstetric_history(patient_id: str, user: dict = Depends(current_user)):
+    db = supabase_admin()
+    assert_patient_access(db, user["sub"], patient_id, action="obstetric_history_read")
+    rows = (
+        db.table("obstetric_history")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .order("pregnancy_number", desc=False)
+        .execute()
+        .data
+        or []
+    )
+    return {"items": rows}
+
+@app.post("/api/v1/patients/{patient_id}/obstetric-history", status_code=201)
+def add_obstetric_history(patient_id: str, payload: ObstetricHistoryCreate, user: dict = Depends(current_user)):
+    db = supabase_admin()
+    patient = assert_patient_access(db, user["sub"], patient_id, action="obstetric_history_write")
+    
+    row = {
+        "patient_id": patient_id,
+        **payload.model_dump(mode="json"),
+    }
+    existing = (
+        db.table("obstetric_history")
+        .select("id")
+        .eq("patient_id", patient_id)
+        .eq("pregnancy_number", payload.pregnancy_number)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if existing:
+        res = db.table("obstetric_history").update(row).eq("id", existing["id"]).execute()
+        saved = res.data[0] if res.data else row
+    else:
+        res = db.table("obstetric_history").insert(row).execute()
+        saved = res.data[0] if res.data else row
+
+    db.table("audit_logs").insert({
+        "actor_user_id": user["sub"],
+        "facility_id": patient.get("facility_id"),
+        "action": "obstetric_history_saved",
+        "entity_type": "obstetric_history",
+        "entity_id": saved.get("id"),
+        "metadata": {"pregnancy_number": payload.pregnancy_number},
+    }).execute()
+    return saved
+
+@app.delete("/api/v1/patients/{patient_id}/obstetric-history/{history_id}")
+def delete_obstetric_history(patient_id: str, history_id: str, user: dict = Depends(current_user)):
+    db = supabase_admin()
+    assert_patient_access(db, user["sub"], patient_id, action="obstetric_history_write")
+    db.table("obstetric_history").delete().eq("id", history_id).eq("patient_id", patient_id).execute()
+    return {"status": "deleted"}
+
+@app.get("/api/v1/patients/{patient_id}/questionnaires")
+def get_patient_questionnaires(patient_id: str, user: dict = Depends(current_user)):
+    db = supabase_admin()
+    patient = assert_patient_access(db, user["sub"], patient_id, action="questionnaire_read")
+    revisions = (
+        db.table("questionnaire_revisions")
+        .select("*")
+        .eq("patient_id", patient_id)
+        .order("created_at", desc=True)
+        .execute()
+        .data
+        or []
+    )
+    return {
+        "patient_id": patient_id,
+        "questionnaire_data": patient.get("questionnaire_data") or {},
+        "revisions": revisions,
+    }
+
 @app.post("/api/v1/bp/measurements", status_code=201)
 def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(current_user)):
     if not payload.worker_confirmed:
@@ -195,4 +299,158 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
         },
     }).execute()
 
-    return measurement
+    # Backend alert evaluation after verification:
+    # Trigger elevated BP alert when SBP >= 140 OR DBP >= 90 mmHg
+    is_elevated = payload.systolic_mmhg >= 140 or payload.diastolic_mmhg >= 90
+    alert_record = None
+    if is_elevated:
+        severity = "red" if (payload.systolic_mmhg >= 160 or payload.diastolic_mmhg >= 110) else "amber"
+        alert_row = {
+            "patient_id": str(payload.patient_id),
+            "measurement_id": measurement["id"],
+            "facility_id": patient["facility_id"],
+            "worker_user_id": user["sub"],
+            "alert_type": "ELEVATED_BP",
+            "severity": severity,
+            "trigger_reason": f"Elevated blood pressure: {payload.systolic_mmhg}/{payload.diastolic_mmhg} mmHg",
+            "systolic_mmhg": payload.systolic_mmhg,
+            "diastolic_mmhg": payload.diastolic_mmhg,
+            "status": "active",
+        }
+        alert_res = db.table("clinical_alerts").insert(alert_row).execute()
+        alert_record = alert_res.data[0] if alert_res.data else alert_row
+
+        db.table("audit_logs").insert({
+            "actor_user_id": user["sub"],
+            "facility_id": patient["facility_id"],
+            "action": "clinical_alert_triggered",
+            "entity_type": "clinical_alert",
+            "entity_id": alert_record.get("id"),
+            "metadata": {
+                "severity": severity,
+                "reason": alert_row["trigger_reason"],
+                "measurement_id": measurement["id"],
+            },
+        }).execute()
+
+    return {
+        **measurement,
+        "alert_triggered": is_elevated,
+        "alert": alert_record,
+    }
+
+class AlertReviewRequest(BaseModel):
+    status: str = Field(pattern="^(reviewed|referred|dismissed)$")
+    review_notes: str = Field(min_length=2, max_length=1000)
+
+@app.get("/api/v1/alerts")
+def list_clinical_alerts(
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+    user: dict = Depends(current_user),
+):
+    db = supabase_admin()
+    accessible_fids = get_accessible_facility_ids(db, user["sub"])
+    if not accessible_fids:
+        raise HTTPException(status_code=403, detail="No active facility assignments")
+
+    query = (
+        db.table("clinical_alerts")
+        .select("*")
+        .in_("facility_id", list(accessible_fids))
+        .order("created_at", desc=True)
+        .limit(limit)
+    )
+    if status:
+        query = query.eq("status", status)
+
+    rows = query.execute().data or []
+    if not rows:
+        return {"items": []}
+
+    pat_ids = list({r["patient_id"] for r in rows if r.get("patient_id")})
+    pat_map = {}
+    if pat_ids:
+        patients = (
+            db.table("patients")
+            .select("id,patient_code,full_name,phone,blood_group,lmp,edd,facility_id")
+            .in_("id", pat_ids)
+            .execute()
+            .data
+            or []
+        )
+        pat_map = {p["id"]: p for p in patients}
+
+    fac_map = get_all_facilities_map(db)
+
+    for r in rows:
+        r["patient"] = pat_map.get(r.get("patient_id"), {})
+        r["facility_name"] = fac_map.get(r.get("facility_id"), {}).get("name", "Unknown Facility")
+
+    return {"items": rows}
+
+@app.post("/api/v1/alerts/{alert_id}/review")
+def review_clinical_alert(
+    alert_id: str,
+    payload: AlertReviewRequest,
+    user: dict = Depends(current_user),
+):
+    db = supabase_admin()
+    accessible_fids = get_accessible_facility_ids(db, user["sub"])
+    alert = db.table("clinical_alerts").select("*").eq("id", alert_id).maybe_single().execute().data
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    if alert["facility_id"] not in accessible_fids:
+        raise HTTPException(status_code=403, detail="Alert belongs to a facility outside your jurisdiction")
+
+    update_row = {
+        "status": payload.status,
+        "reviewed_by": user["sub"],
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+        "review_notes": payload.review_notes,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    res = db.table("clinical_alerts").update(update_row).eq("id", alert_id).execute()
+    updated = res.data[0] if res.data else {**alert, **update_row}
+
+    db.table("audit_logs").insert({
+        "actor_user_id": user["sub"],
+        "facility_id": alert["facility_id"],
+        "action": f"clinical_alert_{payload.status}",
+        "entity_type": "clinical_alert",
+        "entity_id": alert_id,
+        "metadata": {"review_notes": payload.review_notes},
+    }).execute()
+
+    return updated
+
+@app.get("/api/v1/dashboard/metrics")
+def get_dashboard_metrics(user: dict = Depends(current_user)):
+    db = supabase_admin()
+    accessible_fids = get_accessible_facility_ids(db, user["sub"])
+    if not accessible_fids:
+        return {
+            "registered_patients": 0,
+            "active_alerts": 0,
+            "severe_alerts": 0,
+            "active_referrals": 0,
+            "incoming_referrals": 0,
+        }
+
+    fids = list(accessible_fids)
+    user_assignments = get_user_assignments(db, user["sub"])
+    user_direct_fids = [a["facility_id"] for a in user_assignments]
+
+    patients = db.table("patients").select("id").in_("facility_id", fids).execute().data or []
+    alerts = db.table("clinical_alerts").select("id,severity,status").in_("facility_id", fids).eq("status", "active").execute().data or []
+    active_referrals = db.table("referrals").select("id").in_("origin_facility_id", fids).in_("status", ["generated", "sent", "acknowledged", "departed", "arrived", "assessed"]).execute().data or []
+    incoming_referrals = db.table("referrals").select("id").in_("receiving_facility_id", user_direct_fids).in_("status", ["sent", "acknowledged", "departed"]).execute().data or []
+
+    return {
+        "registered_patients": len(patients),
+        "active_alerts": len(alerts),
+        "severe_alerts": sum(1 for a in alerts if a.get("severity") == "red"),
+        "active_referrals": len(active_referrals),
+        "incoming_referrals": len(incoming_referrals),
+    }

@@ -32,12 +32,17 @@ class MockQueryBuilder:
         self._filtered = list(table.items)
         self.is_single = False
         self._update_payload = None
+        self._is_delete = False
         self._last_result = None
 
     def select(self, *args, **kwargs):
         return self
 
     def eq(self, field, value):
+        if self._is_delete:
+            self.table.items = [item for item in self.table.items if str(item.get(field, "")) != str(value)]
+            self._last_result = []
+            return self
         if self._update_payload is not None:
             updated = []
             for item in self.table.items:
@@ -49,6 +54,11 @@ class MockQueryBuilder:
         self._filtered = [x for x in self._filtered if str(x.get(field, "")) == str(value)]
         return self
 
+    def in_(self, field, values):
+        val_strs = {str(v) for v in values}
+        self._filtered = [x for x in self._filtered if str(x.get(field, "")) in val_strs]
+        return self
+
     def maybe_single(self):
         self.is_single = True
         return self
@@ -57,6 +67,10 @@ class MockQueryBuilder:
         return self
 
     def limit(self, *args, **kwargs):
+        return self
+
+    def delete(self):
+        self._is_delete = True
         return self
 
     def insert(self, payload):
@@ -364,6 +378,298 @@ class TestPreeclampsia360BackendIntegration(unittest.TestCase):
         )
         self.assertEqual(res_invalid.status_code, 409)
         self.assertIn("Invalid referral transition", res_invalid.json()["detail"])
+
+    @patch("app.main.supabase_admin")
+    def test_patient_update_profile(self, mock_db_getter):
+        patient_id = str(uuid.uuid4())
+        mock_db = MockDatabase({
+            "facilities": self.facilities,
+            "patients": [{
+                "id": patient_id,
+                "patient_code": "PE360-P1",
+                "full_name": "Radha Rani",
+                "phone": "9876543210",
+                "facility_id": self.phc_a_id,
+                "blood_group": "B+",
+            }],
+            "user_facility_assignments": [{
+                "user_id": self.phc_anm_id,
+                "facility_id": self.phc_a_id,
+                "role": "ANM",
+                "is_active": True,
+            }],
+            "audit_logs": [],
+        })
+        mock_db_getter.return_value = mock_db
+
+        token = generate_test_jwt(self.phc_anm_id)
+        update_payload = {
+            "phone": "9988776655",
+            "blood_group": "O+",
+            "gravida": 2,
+            "parity": 1,
+        }
+        res = self.client.put(
+            f"/api/v1/patients/{patient_id}",
+            json=update_payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["phone"], "9988776655")
+        self.assertEqual(res.json()["blood_group"], "O+")
+
+    @patch("app.main.supabase_admin")
+    def test_patient_obstetric_history_repeatable(self, mock_db_getter):
+        patient_id = str(uuid.uuid4())
+        history_id = str(uuid.uuid4())
+        mock_db = MockDatabase({
+            "facilities": self.facilities,
+            "patients": [{
+                "id": patient_id,
+                "patient_code": "PE360-P2",
+                "full_name": "Sunita Verma",
+                "facility_id": self.phc_a_id,
+            }],
+            "user_facility_assignments": [{
+                "user_id": self.phc_anm_id,
+                "facility_id": self.phc_a_id,
+                "role": "ANM",
+                "is_active": True,
+            }],
+            "obstetric_history": [],
+            "audit_logs": [],
+        })
+        mock_db_getter.return_value = mock_db
+
+        token = generate_test_jwt(self.phc_anm_id)
+
+        # 1. Add obstetric history record for Pregnancy #1
+        ob_payload = {
+            "pregnancy_number": 1,
+            "conception_type": "spontaneous",
+            "antenatal_complications": "Preeclampsia at 34 weeks, delivered via LSCS",
+            "delivery_details": {"outcome": "LSCS", "year": "2024"},
+            "baby_details": {"birth_weight_kg": 2.4, "gender": "Female"},
+        }
+        res = self.client.post(
+            f"/api/v1/patients/{patient_id}/obstetric-history",
+            json=ob_payload,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res.status_code, 201)
+        created_id = res.json()["id"]
+
+        # 2. Retrieve obstetric history list
+        res_list = self.client.get(
+            f"/api/v1/patients/{patient_id}/obstetric-history",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res_list.status_code, 200)
+        self.assertEqual(len(res_list.json()["items"]), 1)
+        self.assertEqual(res_list.json()["items"][0]["pregnancy_number"], 1)
+
+    @patch("app.workflows.supabase_admin")
+    @patch("app.main.supabase_admin")
+    def test_patient_questionnaire_sections_and_draft(self, mock_main_db, mock_wf_db):
+        patient_id = str(uuid.uuid4())
+        mock_db = MockDatabase({
+            "facilities": self.facilities,
+            "patients": [{
+                "id": patient_id,
+                "patient_code": "PE360-P3",
+                "full_name": "Ananya Sen",
+                "facility_id": self.phc_a_id,
+                "questionnaire_data": {},
+            }],
+            "user_facility_assignments": [{
+                "user_id": self.phc_anm_id,
+                "facility_id": self.phc_a_id,
+                "role": "ANM",
+                "is_active": True,
+            }],
+            "questionnaire_revisions": [],
+            "audit_logs": [],
+        })
+        mock_main_db.return_value = mock_db
+        mock_wf_db.return_value = mock_db
+
+        token = generate_test_jwt(self.phc_anm_id)
+
+        # Save draft section
+        res_draft = self.client.post(
+            "/api/v1/questionnaires/sections",
+            json={
+                "patient_id": patient_id,
+                "section_key": "Personal details",
+                "answers": {"Patient name": "Ananya Sen", "Age": "26", "Blood group": "A+"},
+                "completed": False,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res_draft.status_code, 201)
+
+        # Retrieve full questionnaires endpoint
+        res_q = self.client.get(
+            f"/api/v1/patients/{patient_id}/questionnaires",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res_q.status_code, 200)
+        self.assertIn("Personal details", res_q.json()["questionnaire_data"])
+
+    @patch("app.main.supabase_admin")
+    def test_bp_measurement_normal_and_elevated_alert(self, mock_db_getter):
+        patient_id = str(uuid.uuid4())
+        mock_db = MockDatabase({
+            "facilities": self.facilities,
+            "patients": [{
+                "id": patient_id,
+                "patient_code": "PE360-P4",
+                "full_name": "Meera Joshi",
+                "facility_id": self.phc_a_id,
+            }],
+            "user_facility_assignments": [{
+                "user_id": self.phc_anm_id,
+                "facility_id": self.phc_a_id,
+                "role": "ANM",
+                "is_active": True,
+            }],
+            "bp_measurements": [],
+            "clinical_alerts": [],
+            "audit_logs": [],
+        })
+        mock_db_getter.return_value = mock_db
+
+        token = generate_test_jwt(self.phc_anm_id)
+
+        # 1. Normal BP (118/76) -> No alert triggered
+        payload_normal = {
+            "patient_id": patient_id,
+            "systolic_mmhg": 118,
+            "diastolic_mmhg": 76,
+            "pulse_bpm": 72,
+            "worker_confirmed": True,
+            "measured_at": datetime.now(timezone.utc).isoformat(),
+        }
+        res_norm = self.client.post(
+            "/api/v1/bp/measurements",
+            json=payload_normal,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res_norm.status_code, 201)
+        self.assertFalse(res_norm.json()["alert_triggered"])
+        self.assertIsNone(res_norm.json()["alert"])
+
+        # 2. Elevated BP (148/96) -> SBP >= 140 / DBP >= 90 -> Triggers Amber Alert
+        payload_elevated = {
+            "patient_id": patient_id,
+            "systolic_mmhg": 148,
+            "diastolic_mmhg": 96,
+            "pulse_bpm": 84,
+            "worker_confirmed": True,
+            "measured_at": datetime.now(timezone.utc).isoformat(),
+        }
+        res_elevated = self.client.post(
+            "/api/v1/bp/measurements",
+            json=payload_elevated,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res_elevated.status_code, 201)
+        self.assertTrue(res_elevated.json()["alert_triggered"])
+        alert = res_elevated.json()["alert"]
+        self.assertEqual(alert["severity"], "amber")
+        self.assertEqual(alert["status"], "active")
+        self.assertIn("148/96", alert["trigger_reason"])
+
+        # 3. Severe BP (165/112) -> SBP >= 160 / DBP >= 110 -> Triggers Red Alert
+        payload_severe = {
+            "patient_id": patient_id,
+            "systolic_mmhg": 165,
+            "diastolic_mmhg": 112,
+            "pulse_bpm": 92,
+            "worker_confirmed": True,
+            "measured_at": datetime.now(timezone.utc).isoformat(),
+        }
+        res_severe = self.client.post(
+            "/api/v1/bp/measurements",
+            json=payload_severe,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        self.assertEqual(res_severe.status_code, 201)
+        self.assertTrue(res_severe.json()["alert_triggered"])
+        alert_red = res_severe.json()["alert"]
+        self.assertEqual(alert_red["severity"], "red")
+
+    @patch("app.main.supabase_admin")
+    def test_alert_list_and_mo_review(self, mock_db_getter):
+        alert_id = str(uuid.uuid4())
+        patient_id = str(uuid.uuid4())
+        mock_db = MockDatabase({
+            "facilities": self.facilities,
+            "patients": [{
+                "id": patient_id,
+                "patient_code": "PE360-ALERT-PAT",
+                "full_name": "Lata Mangesh",
+                "facility_id": self.phc_a_id,
+            }],
+            "user_facility_assignments": [{
+                "user_id": self.chc_mo_id,
+                "facility_id": self.chc_id,
+                "role": "CHC_MO",
+                "is_active": True,
+            }],
+            "clinical_alerts": [{
+                "id": alert_id,
+                "patient_id": patient_id,
+                "facility_id": self.phc_a_id,
+                "measurement_id": str(uuid.uuid4()),
+                "worker_user_id": self.phc_anm_id,
+                "alert_type": "ELEVATED_BP",
+                "severity": "red",
+                "trigger_reason": "Elevated blood pressure: 165/110 mmHg",
+                "systolic_mmhg": 165,
+                "diastolic_mmhg": 110,
+                "status": "active",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }],
+            "referrals": [],
+            "audit_logs": [],
+        })
+        mock_db_getter.return_value = mock_db
+
+        mo_token = generate_test_jwt(self.chc_mo_id)
+
+        # 1. MO lists active alerts within CHC hierarchy (includes child PHC A)
+        res_list = self.client.get(
+            "/api/v1/alerts?status=active",
+            headers={"Authorization": f"Bearer {mo_token}"},
+        )
+        self.assertEqual(res_list.status_code, 200)
+        items = res_list.json()["items"]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["severity"], "red")
+        self.assertEqual(items[0]["patient"]["full_name"], "Lata Mangesh")
+
+        # 2. MO reviews alert and marks for referral
+        res_review = self.client.post(
+            f"/api/v1/alerts/{alert_id}/review",
+            json={"status": "referred", "review_notes": "Urgent obstetric consult required for severe HTN"},
+            headers={"Authorization": f"Bearer {mo_token}"},
+        )
+        self.assertEqual(res_review.status_code, 200)
+        self.assertEqual(res_review.json()["status"], "referred")
+        self.assertEqual(res_review.json()["review_notes"], "Urgent obstetric consult required for severe HTN")
+
+        # 3. Check dashboard metrics endpoint
+        res_metrics = self.client.get(
+            "/api/v1/dashboard/metrics",
+            headers={"Authorization": f"Bearer {mo_token}"},
+        )
+        self.assertEqual(res_metrics.status_code, 200)
+        metrics = res_metrics.json()
+        self.assertIn("registered_patients", metrics)
+        self.assertIn("active_alerts", metrics)
+
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,7 +4,9 @@ import '../../core/theme.dart';
 import '../../shared/ui.dart';
 
 class ReferralScreen extends StatefulWidget {
-  const ReferralScreen({super.key});
+  final String? initialPatientId;
+  final String? initialReason;
+  const ReferralScreen({super.key, this.initialPatientId, this.initialReason});
   @override
   State<ReferralScreen> createState() => _ReferralScreenState();
 }
@@ -13,11 +15,23 @@ class _ReferralScreenState extends State<ReferralScreen> {
   List<dynamic> referrals = [];
   bool loading = true;
   String? error;
+  String filter = 'all';
 
   @override
   void initState() {
     super.initState();
-    load();
+    load().then((_) {
+      if (widget.initialPatientId != null && mounted) {
+        showDialog(
+          context: context,
+          builder: (c) => _CreateReferralDialog(
+            initialPatientId: widget.initialPatientId,
+            initialReason: widget.initialReason,
+            onCreated: load,
+          ),
+        );
+      }
+    });
   }
 
   Future<void> load() async {
@@ -87,6 +101,19 @@ class _ReferralScreenState extends State<ReferralScreen> {
             ],
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(value: 'all', label: Text('All Referrals')),
+              ButtonSegment(value: 'inbox', label: Text('Receiving Inbox'), icon: Icon(Icons.inbox)),
+              ButtonSegment(value: 'outbound', label: Text('Dispatches'), icon: Icon(Icons.outbox)),
+            ],
+            selected: {filter},
+            onSelectionChanged: (s) => setState(() => filter = s.first),
+          ),
+        ),
+        const SizedBox(height: 8),
         Expanded(
           child: loading
               ? const LoadingView()
@@ -108,11 +135,31 @@ class _ReferralScreenState extends State<ReferralScreen> {
                       ? const Center(child: Text('No active referrals for your assigned facility.'))
                       : RefreshIndicator(
                           onRefresh: load,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: referrals.length,
-                            itemBuilder: (context, i) {
-                              final r = Map<String, dynamic>.from(referrals[i] as Map);
+                          child: Builder(
+                            builder: (context) {
+                              final displayed = referrals.where((r) {
+                                final item = Map<String, dynamic>.from(r as Map);
+                                if (filter == 'inbox') return _isReceiver(item);
+                                if (filter == 'outbound') return _isOrigin(item);
+                                return true;
+                              }).toList();
+
+                              if (displayed.isEmpty) {
+                                return Center(
+                                  child: Text(
+                                    filter == 'inbox'
+                                        ? 'No incoming referrals waiting in your facility inbox.'
+                                        : 'No referrals in this view.',
+                                    style: const TextStyle(color: AppColors.muted),
+                                  ),
+                                );
+                              }
+
+                              return ListView.builder(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: displayed.length,
+                                itemBuilder: (context, i) {
+                                  final r = Map<String, dynamic>.from(displayed[i] as Map);
                               final status = (r['status'] ?? 'generated').toString();
                               final isOrig = _isOrigin(r);
                               final isRecv = _isReceiver(r);
@@ -207,8 +254,10 @@ class _ReferralScreenState extends State<ReferralScreen> {
                                 ),
                               );
                             },
-                          ),
-                        ),
+                          );
+                        },
+                      ),
+                    ),
         ),
       ],
     );
@@ -217,13 +266,15 @@ class _ReferralScreenState extends State<ReferralScreen> {
 
 class _CreateReferralDialog extends StatefulWidget {
   final Future<void> Function() onCreated;
-  const _CreateReferralDialog({required this.onCreated});
+  final String? initialPatientId;
+  final String? initialReason;
+  const _CreateReferralDialog({required this.onCreated, this.initialPatientId, this.initialReason});
   @override
   State<_CreateReferralDialog> createState() => _CreateReferralDialogState();
 }
 
 class _CreateReferralDialogState extends State<_CreateReferralDialog> {
-  final reason = TextEditingController();
+  late final TextEditingController reason;
   List<dynamic> patients = [];
   List<dynamic> facilities = [];
   String? patientId;
@@ -234,6 +285,8 @@ class _CreateReferralDialogState extends State<_CreateReferralDialog> {
   @override
   void initState() {
     super.initState();
+    reason = TextEditingController(text: widget.initialReason ?? '');
+    patientId = widget.initialPatientId;
     _loadData();
   }
 

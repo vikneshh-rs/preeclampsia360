@@ -109,6 +109,7 @@ class ApiClient {
 
   Future<dynamic> get(String path) => _request('GET', path);
   Future<dynamic> post(String path, [Map<String, dynamic>? body]) => _request('POST', path, body: body);
+  Future<dynamic> put(String path, [Map<String, dynamic>? body]) => _request('PUT', path, body: body);
   Future<dynamic> patch(String path, [Map<String, dynamic>? body]) => _request('PATCH', path, body: body);
   Future<dynamic> delete(String path) => _request('DELETE', path);
 

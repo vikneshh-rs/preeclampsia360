@@ -2,18 +2,396 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../../shared/ui.dart';
+import '../questionnaire/antenatal_questionnaire_screen.dart';
 
-class PatientRegistrationScreen extends StatefulWidget { const PatientRegistrationScreen({super.key}); @override State<PatientRegistrationScreen> createState()=>_PatientRegistrationScreenState(); }
-class _PatientRegistrationScreenState extends State<PatientRegistrationScreen>{final form=GlobalKey<FormState>();int step=0;bool saving=false;
- final name=TextEditingController(),age=TextEditingController(),phone=TextEditingController(),address=TextEditingController(),blood=TextEditingController(),lmp=TextEditingController(),edd=TextEditingController(),gravida=TextEditingController(),parity=TextEditingController(),abortions=TextEditingController(),living=TextEditingController(),husband=TextEditingController(),occupation=TextEditingController(),income=TextEditingController(),healthCenter=TextEditingController(),transport=TextEditingController(),distance=TextEditingController(),menarche=TextEditingController(),married=TextEditingController(),medical=TextEditingController(),allergy=TextEditingController(),diet=TextEditingController(),pastOb=TextEditingController(),delivery=TextEditingController(),baby=TextEditingController(),family=TextEditingController();
- final Map<String,dynamic> answers={};
- void textAnswer(String k,String v){answers[k]=v;}
- Future<void> save()async{if(!form.currentState!.validate())return;setState(()=>saving=true);try{final q=<String,dynamic>{'personal_details':{'age':_int(age.text),'husband_name':husband.text,'occupation':occupation.text,'family_income':income.text,'nearest_health_center':healthCenter.text,'transportation_method':transport.text,'distance_from_residence':distance.text},'obstetric_history':{'gravida':_int(gravida.text),'parity':_int(parity.text),'abortions':_int(abortions.text),'living_children':_int(living.text),'past_obstetric_history':pastOb.text,'delivery_details':delivery.text,'baby_details':baby.text},'menstrual_history':{'age_at_menarche':menarche.text,'married_for':married.text},'medical_history':{'past_medical_history':medical.text,'allergies':allergy.text},'diet_history':{'diet':diet.text},'family_history':{'history':family.text},'trimester_1':{'visits_and_remarks':_extra['t1_visits']?.text??'',...answers},'trimester_2':{'dipsi_result':_extra['dipsi']?.text??'','anomaly_scan_remarks':_extra['anomaly_scan']?.text??''},'trimester_3':{'visits_and_remarks':_extra['t3_visits']?.text??''},'presenting_complaints':answers};await ApiClient.instance.post('/api/v1/patients',{'full_name':name.text.trim(),'date_of_birth':null,'phone':phone.text.trim().isEmpty?null:phone.text.trim(),'address':address.text.trim(),'blood_group':blood.text.trim().isEmpty?null:blood.text.trim(),'lmp':lmp.text.trim().isEmpty?null:lmp.text.trim(),'edd':edd.text.trim().isEmpty?null:edd.text.trim(),'gravida':_int(gravida.text),'parity':_int(parity.text),'abortions':_int(abortions.text),'living_children':_int(living.text),'questionnaire':q});if(mounted){showMessage(context,'Patient registered successfully.');Navigator.pop(context,true);}}catch(e){if(mounted)showMessage(context,e.toString(),error:true);}finally{if(mounted)setState(()=>saving=false);}}
- int? _int(String v)=>int.tryParse(v.trim());
- @override Widget build(BuildContext context){final titles=['Personal details','Obstetric history','Medical & lifestyle','Pregnancy assessment'];return Scaffold(appBar:AppBar(title:const Text('Register pregnant woman')),body:Form(key:form,child:Column(children:[Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('Step ${step+1} of 4  •  ${titles[step]}',style:const TextStyle(fontWeight:FontWeight.w800,color:AppColors.crimson)),const SizedBox(height:10),LinearProgressIndicator(value:(step+1)/4,color:AppColors.crimson,backgroundColor:AppColors.blush,borderRadius:BorderRadius.circular(8))])),Expanded(child:ListView(padding:const EdgeInsets.fromLTRB(16,0,16,16),children:[if(step==0)...[_section('Mother’s details'),_field('Full name',name,required:true),_field('Age',age,numeric:true),_field('Phone (optional)',phone,numeric:true),_field('Address',address,maxLines:2),_field('Blood group',blood),_section('Family & access'),_field('Husband / partner name',husband),_field('Occupation',occupation),_field('Family income',income),_field('Nearest health centre',healthCenter),_field('Transportation method',transport),_field('Distance from residence',distance)],if(step==1)...[_section('Pregnancy details'),_field('LMP (YYYY-MM-DD)',lmp),_field('EDD (YYYY-MM-DD)',edd),_field('Gravida (G)',gravida,numeric:true),_field('Parity (P)',parity,numeric:true),_field('Abortions (A)',abortions,numeric:true),_field('Living children (L)',living,numeric:true),_field('Past obstetric history — one entry per pregnancy',pastOb,maxLines:4),_field('Delivery details',delivery,maxLines:3),_field('Baby details',baby,maxLines:3)],if(step==2)...[_section('Menstrual & marital history'),_field('Age at menarche',menarche),_field('Married for',married),_section('Medical history'),_field('Past medical history (HTN, DM, thyroid, TB, etc.)',medical,maxLines:3),_field('Drug / other allergies',allergy,maxLines:2),_section('Diet & family history'),_field('Diet history / 24-hour recall',diet,maxLines:3),_field('Family history (congenital anomalies, multiple pregnancy, chronic disorders)',family,maxLines:3)],if(step==3)...[_section('Presenting complaints'),_question('Persistent headache?','headache'),_question('Blurred vision?','blurred_vision'),_question('Swelling of face or hands?','swelling'),_question('Upper abdominal pain?','upper_abdominal_pain'),_question('Bleeding per vaginum?','bleeding_pv'),_question('Leaking per vaginum?','leaking_pv'),_section('First trimester'),_question('Hyperemesis?','hyperemesis'),_question('Fever with rashes?','fever_rashes'),_question('Pain during urination?','dysuria'),_field('Antenatal visits / remarks',_controller('t1_visits'),maxLines:2),_section('Second trimester'),_question('Symptoms of preeclampsia?','t2_preeclampsia_symptoms'),_question('Edema?','t2_edema'),_question('Fetal quickening noted?','quickening'),_field('DIPSI result',_controller('dipsi')), _field('Anomaly scan remarks',_controller('anomaly_scan'),maxLines:2),_section('Third trimester'),_question('Fetal movements normal?','fetal_movements'),_question('Bladder or bowel disturbances?','bladder_bowel'),_field('Antenatal visits / remarks',_controller('t3_visits'),maxLines:2),const Padding(padding:EdgeInsets.all(8),child:Text('This form records history. Clinical risk classification must be performed using an approved, versioned clinical protocol by authorised clinical staff.',style:TextStyle(color:AppColors.muted,fontSize:12)))]])),Padding(padding:const EdgeInsets.all(16),child:Row(children:[if(step>0)Expanded(child:OutlinedButton(onPressed:()=>setState(()=>step--),child:const Text('Back'))),if(step>0)const SizedBox(width:10),Expanded(child:FilledButton(onPressed:saving?null:()=>step<3?setState(()=>step++):save(),child:saving?const SizedBox(height:18,width:18,child:CircularProgressIndicator(strokeWidth:2,color:Colors.white)):Text(step<3?'Continue':'Save patient')))]))])));}
- TextEditingController _controller(String key){return _extra.putIfAbsent(key,()=>TextEditingController());}
- final Map<String,TextEditingController> _extra={};
- Widget _section(String s)=>Padding(padding:const EdgeInsets.fromLTRB(0,16,0,8),child:Text(s,style:const TextStyle(fontSize:16,fontWeight:FontWeight.w800,color:AppColors.crimson)));
- Widget _field(String label,TextEditingController c,{bool required=false,bool numeric=false,int maxLines=1})=>Padding(padding:const EdgeInsets.only(bottom:12),child:TextFormField(controller:c,maxLines:maxLines,keyboardType:numeric?TextInputType.number:TextInputType.text,validator:required?(v)=>v==null||v.trim().isEmpty?'Required field':null:null,decoration:InputDecoration(labelText:label))); 
- Widget _question(String label,String key)=>Padding(padding:const EdgeInsets.only(bottom:12),child:P360Card(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(label,style:const TextStyle(fontWeight:FontWeight.w700)),const SizedBox(height:8),DropdownButtonFormField<String>(initialValue:answers[key] as String?,decoration:const InputDecoration(isDense:true,labelText:'Response'),items:const [DropdownMenuItem(value:'yes',child:Text('Yes')),DropdownMenuItem(value:'no',child:Text('No')),DropdownMenuItem(value:'unknown',child:Text('Not known'))],onChanged:(v)=>setState(()=>answers[key]=v))])));
+class PatientRegistrationScreen extends StatefulWidget {
+  const PatientRegistrationScreen({super.key});
+  @override
+  State<PatientRegistrationScreen> createState() => _PatientRegistrationScreenState();
+}
+
+class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
+  final form = GlobalKey<FormState>();
+  int step = 0;
+  bool saving = false;
+
+  final name = TextEditingController();
+  final age = TextEditingController();
+  final phone = TextEditingController();
+  final address = TextEditingController();
+  final blood = TextEditingController();
+  final lmp = TextEditingController();
+  final edd = TextEditingController();
+  final gravida = TextEditingController();
+  final parity = TextEditingController();
+  final abortions = TextEditingController();
+  final living = TextEditingController();
+  final husband = TextEditingController();
+  final occupation = TextEditingController();
+  final income = TextEditingController();
+  final healthCenter = TextEditingController();
+  final transport = TextEditingController();
+  final distance = TextEditingController();
+  final menarche = TextEditingController();
+  final married = TextEditingController();
+  final medical = TextEditingController();
+  final allergy = TextEditingController();
+  final diet = TextEditingController();
+  final pastOb = TextEditingController();
+  final delivery = TextEditingController();
+  final baby = TextEditingController();
+  final family = TextEditingController();
+
+  final Map<String, dynamic> answers = {};
+  final Map<String, TextEditingController> _extra = {};
+
+  @override
+  void dispose() {
+    name.dispose();
+    age.dispose();
+    phone.dispose();
+    address.dispose();
+    blood.dispose();
+    lmp.dispose();
+    edd.dispose();
+    gravida.dispose();
+    parity.dispose();
+    abortions.dispose();
+    living.dispose();
+    husband.dispose();
+    occupation.dispose();
+    income.dispose();
+    healthCenter.dispose();
+    transport.dispose();
+    distance.dispose();
+    menarche.dispose();
+    married.dispose();
+    medical.dispose();
+    allergy.dispose();
+    diet.dispose();
+    pastOb.dispose();
+    delivery.dispose();
+    baby.dispose();
+    family.dispose();
+    for (final c in _extra.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void textAnswer(String k, String v) {
+    answers[k] = v;
+  }
+
+  int? _int(String v) => int.tryParse(v.trim());
+
+  TextEditingController _controller(String key) {
+    return _extra.putIfAbsent(key, () => TextEditingController());
+  }
+
+  Future<void> save() async {
+    if (!form.currentState!.validate()) return;
+    setState(() => saving = true);
+    try {
+      final q = <String, dynamic>{
+        'personal_details': {
+          'age': _int(age.text),
+          'husband_name': husband.text.trim(),
+          'occupation': occupation.text.trim(),
+          'family_income': income.text.trim(),
+          'nearest_health_center': healthCenter.text.trim(),
+          'transportation_method': transport.text.trim(),
+          'distance_from_residence': distance.text.trim(),
+        },
+        'obstetric_history': {
+          'gravida': _int(gravida.text),
+          'parity': _int(parity.text),
+          'abortions': _int(abortions.text),
+          'living_children': _int(living.text),
+          'past_obstetric_history': pastOb.text.trim(),
+          'delivery_details': delivery.text.trim(),
+          'baby_details': baby.text.trim(),
+        },
+        'menstrual_history': {
+          'age_at_menarche': menarche.text.trim(),
+          'married_for': married.text.trim(),
+        },
+        'medical_history': {
+          'past_medical_history': medical.text.trim(),
+          'allergies': allergy.text.trim(),
+        },
+        'diet_history': {
+          'diet': diet.text.trim(),
+        },
+        'family_history': {
+          'history': family.text.trim(),
+        },
+        'trimester_1': {
+          'visits_and_remarks': _extra['t1_visits']?.text.trim() ?? '',
+          ...answers,
+        },
+        'trimester_2': {
+          'dipsi_result': _extra['dipsi']?.text.trim() ?? '',
+          'anomaly_scan_remarks': _extra['anomaly_scan']?.text.trim() ?? '',
+        },
+        'trimester_3': {
+          'visits_and_remarks': _extra['t3_visits']?.text.trim() ?? '',
+        },
+        'presenting_complaints': answers,
+      };
+
+      final payload = {
+        'full_name': name.text.trim(),
+        'date_of_birth': null,
+        'phone': phone.text.trim().isEmpty ? null : phone.text.trim(),
+        'address': address.text.trim(),
+        'blood_group': blood.text.trim().isEmpty ? null : blood.text.trim(),
+        'lmp': lmp.text.trim().isEmpty ? null : lmp.text.trim(),
+        'edd': edd.text.trim().isEmpty ? null : edd.text.trim(),
+        'gravida': _int(gravida.text),
+        'parity': _int(parity.text),
+        'abortions': _int(abortions.text),
+        'living_children': _int(living.text),
+        'questionnaire': q,
+      };
+
+      final res = await ApiClient.instance.post('/api/v1/patients', payload);
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (c) => AlertDialog(
+            title: const Text('Mother Registered Successfully'),
+            content: Text(
+              'Mother ${name.text.trim()} has been registered with ID ${res['patient_code'] ?? 'PE360'}.\n\nWould you like to complete the full maternal assessment questionnaire now?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(c);
+                  Navigator.pop(context, true);
+                },
+                child: const Text('Return to Patient List'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
+                onPressed: () {
+                  Navigator.pop(c);
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AntenatalQuestionnaireScreen(
+                        patientId: res['id']?.toString(),
+                        patientName: res['full_name']?.toString() ?? name.text.trim(),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('Start Maternal Assessment'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) showMessage(context, e.toString(), error: true);
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final titles = [
+      'Personal details',
+      'Obstetric history',
+      'Medical & lifestyle',
+      'Pregnancy assessment',
+    ];
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Register pregnant woman')),
+      body: Form(
+        key: form,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Step ${step + 1} of 4  •  ${titles[step]}',
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.crimson),
+                  ),
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    value: (step + 1) / 4,
+                    color: AppColors.crimson,
+                    backgroundColor: AppColors.blush,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  if (step == 0) ...[
+                    _section('Mother’s details'),
+                    _field('Full name', name, required: true),
+                    _field('Age', age, numeric: true),
+                    _field('Phone (optional)', phone, numeric: true),
+                    _field('Address', address, maxLines: 2),
+                    _field('Blood group (e.g. O+, B+, A+)', blood),
+                    _section('Family & access'),
+                    _field('Husband / partner name', husband),
+                    _field('Occupation', occupation),
+                    _field('Family income', income),
+                    _field('Nearest health centre', healthCenter),
+                    _field('Transportation method', transport),
+                    _field('Distance from residence', distance),
+                  ],
+                  if (step == 1) ...[
+                    _section('Pregnancy details'),
+                    _field('LMP (YYYY-MM-DD)', lmp),
+                    _field('EDD (YYYY-MM-DD)', edd),
+                    _field('Gravida (G)', gravida, numeric: true),
+                    _field('Parity (P)', parity, numeric: true),
+                    _field('Abortions (A)', abortions, numeric: true),
+                    _field('Living children (L)', living, numeric: true),
+                    _field('Past obstetric summary', pastOb, maxLines: 3),
+                    _field('Delivery details', delivery, maxLines: 2),
+                    _field('Baby details', baby, maxLines: 2),
+                  ],
+                  if (step == 2) ...[
+                    _section('Menstrual & marital history'),
+                    _field('Age at menarche', menarche),
+                    _field('Married for', married),
+                    _section('Medical history'),
+                    _field('Past medical history (HTN, DM, thyroid, TB, etc.)', medical, maxLines: 3),
+                    _field('Drug / other allergies', allergy, maxLines: 2),
+                    _section('Diet & family history'),
+                    _field('Diet history / 24-hour recall', diet, maxLines: 3),
+                    _field('Family history (congenital anomalies, multiple pregnancy, chronic disorders)', family, maxLines: 3),
+                  ],
+                  if (step == 3) ...[
+                    _section('Presenting complaints'),
+                    _question('Persistent headache?', 'headache'),
+                    _question('Blurred vision?', 'blurred_vision'),
+                    _question('Swelling of face or hands?', 'swelling'),
+                    _question('Upper abdominal pain?', 'upper_abdominal_pain'),
+                    _question('Bleeding per vaginum?', 'bleeding_pv'),
+                    _question('Leaking per vaginum?', 'leaking_pv'),
+                    _section('First trimester'),
+                    _question('Hyperemesis?', 'hyperemesis'),
+                    _question('Fever with rashes?', 'fever_rashes'),
+                    _question('Pain during urination?', 'dysuria'),
+                    _field('Antenatal visits / remarks', _controller('t1_visits'), maxLines: 2),
+                    _section('Second trimester'),
+                    _question('Symptoms of preeclampsia?', 't2_preeclampsia_symptoms'),
+                    _question('Edema?', 't2_edema'),
+                    _question('Fetal quickening noted?', 'quickening'),
+                    _field('DIPSI result', _controller('dipsi')),
+                    _field('Anomaly scan remarks', _controller('anomaly_scan'), maxLines: 2),
+                    _section('Third trimester'),
+                    _question('Fetal movements normal?', 'fetal_movements'),
+                    _question('Bladder or bowel disturbances?', 'bladder_bowel'),
+                    _field('Antenatal visits / remarks', _controller('t3_visits'), maxLines: 2),
+                    const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Text(
+                        'This form records history. Clinical risk classification must be performed using an approved, versioned clinical protocol by authorised clinical staff.',
+                        style: TextStyle(color: AppColors.muted, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  if (step > 0)
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() => step--),
+                        child: const Text('Back'),
+                      ),
+                    ),
+                  if (step > 0) const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
+                      onPressed: saving
+                          ? null
+                          : () => step < 3 ? setState(() => step++) : save(),
+                      child: saving
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : Text(step < 3 ? 'Continue' : 'Save patient'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _section(String s) => Padding(
+        padding: const EdgeInsets.fromLTRB(0, 16, 0, 8),
+        child: Text(
+          s,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.crimson),
+        ),
+      );
+
+  Widget _field(
+    String label,
+    TextEditingController c, {
+    bool required = false,
+    bool numeric = false,
+    int maxLines = 1,
+  }) =>
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: TextFormField(
+          controller: c,
+          maxLines: maxLines,
+          keyboardType: numeric ? TextInputType.number : TextInputType.text,
+          validator: required ? (v) => v == null || v.trim().isEmpty ? 'Required field' : null : null,
+          decoration: InputDecoration(labelText: label),
+        ),
+      );
+
+  Widget _question(String label, String key) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: P360Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: answers[key] as String?,
+                decoration: const InputDecoration(isDense: true, labelText: 'Response'),
+                items: const [
+                  DropdownMenuItem(value: 'yes', child: Text('Yes')),
+                  DropdownMenuItem(value: 'no', child: Text('No')),
+                  DropdownMenuItem(value: 'unknown', child: Text('Not known')),
+                ],
+                onChanged: (v) => setState(() => answers[key] = v),
+              ),
+            ],
+          ),
+        ),
+      );
 }

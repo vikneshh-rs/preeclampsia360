@@ -103,9 +103,7 @@ class _AppShellState extends State<AppShell> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.cloud_off_outlined, size: 42, color: AppColors.warning),
-                        const SizedBox(height: 12),
-                        Text(error!, textAlign: TextAlign.center),
+                        Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.critical)),
                         const SizedBox(height: 12),
                         FilledButton(onPressed: load, child: const Text('Retry')),
                       ],
@@ -116,17 +114,19 @@ class _AppShellState extends State<AppShell> {
                   children: [
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       color: AppColors.paleRose,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      child: Row(
                         children: [
+                          const Icon(Icons.badge_outlined, color: AppColors.crimson, size: 18),
+                          const SizedBox(width: 8),
                           Text(
-                            'Welcome, ${user['full_name'] ?? 'Healthcare Worker'}',
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: AppColors.ink),
+                            user['full_name'] ?? 'Healthcare Worker',
+                            style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.crimson),
                           ),
+                          const Spacer(),
                           Text(
-                            '${user['login_id'] ?? ''}  •  ${_roleLabel()}',
+                            _roleLabel(),
                             style: const TextStyle(color: AppColors.muted, fontSize: 12),
                           ),
                         ],
@@ -182,6 +182,8 @@ class _DashboardHomeState extends State<DashboardHome> {
   bool loading = true;
   List<dynamic> patients = [];
   List<dynamic> referrals = [];
+  List<dynamic> activeAlerts = [];
+  Map<String, dynamic> metrics = {};
   String? err;
 
   @override
@@ -194,10 +196,15 @@ class _DashboardHomeState extends State<DashboardHome> {
     try {
       final p = await ApiClient.instance.get('/api/v1/patients?limit=100');
       final r = await ApiClient.instance.get('/api/v1/referrals');
+      final a = await ApiClient.instance.get('/api/v1/alerts?status=active');
+      final m = await ApiClient.instance.get('/api/v1/dashboard/metrics');
       if (mounted) {
         setState(() {
           patients = List.from(p['items'] ?? []);
           referrals = List.from(r['items'] ?? []);
+          activeAlerts = List.from(a['items'] ?? []);
+          metrics = Map<String, dynamic>.from(m);
+          err = null;
         });
       }
     } catch (e) {
@@ -207,14 +214,100 @@ class _DashboardHomeState extends State<DashboardHome> {
     }
   }
 
+  void _openReviewDialog(Map<String, dynamic> alert) {
+    final notesCtrl = TextEditingController();
+    String decision = 'reviewed';
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Clinical Assessment of Alert'),
+        content: SizedBox(
+          width: 440,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Patient: ${alert['patient']?['full_name'] ?? 'Mother'} (${alert['patient']?['patient_code'] ?? ''})',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Trigger: ${alert['trigger_reason']}',
+                style: TextStyle(
+                  color: alert['severity'] == 'red' ? AppColors.critical : AppColors.warning,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: decision,
+                decoration: const InputDecoration(labelText: 'Clinical Decision'),
+                items: const [
+                  DropdownMenuItem(value: 'reviewed', child: Text('Reviewed — Stable under observation')),
+                  DropdownMenuItem(value: 'referred', child: Text('Referred — Specialist intervention required')),
+                  DropdownMenuItem(value: 'dismissed', child: Text('Dismissed — Repeat reading normal')),
+                ],
+                onChanged: (v) => decision = v ?? 'reviewed',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: notesCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Medical Officer Review Notes *',
+                  hintText: 'Enter clinical impression and management directives...',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
+            onPressed: () async {
+              if (notesCtrl.text.trim().length < 2) {
+                showMessage(context, 'Please enter clinical review notes.', error: true);
+                return;
+              }
+              try {
+                await ApiClient.instance.post('/api/v1/alerts/${alert['id']}/review', {
+                  'status': decision,
+                  'review_notes': notesCtrl.text.trim(),
+                });
+                if (c.mounted) Navigator.pop(c);
+                if (mounted) {
+                  showMessage(context, 'Alert clinical review recorded.');
+                  refresh();
+                }
+              } catch (e) {
+                if (mounted) showMessage(context, e.toString(), error: true);
+              }
+            },
+            child: const Text('Submit Review'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final myFid = ApiClient.instance.activeFacilityId;
+    final incomingWaiting = referrals.where((r) {
+      final isMine = r['receiving_facility_id']?.toString() == myFid;
+      final isWaiting = r['status'] == 'sent' || r['status'] == 'acknowledged';
+      return isMine && isWaiting;
+    }).toList();
+
     return RefreshIndicator(
       onRefresh: refresh,
       child: ListView(
         padding: const EdgeInsets.all(18),
         children: [
-          const P360Header('Clinical overview', subtitle: 'Your facility activity at a glance'),
+          const P360Header('Clinical care overview', subtitle: 'Live maternal surveillance & referral coordination'),
           const SizedBox(height: 18),
           if (err != null)
             Padding(
@@ -230,33 +323,156 @@ class _DashboardHomeState extends State<DashboardHome> {
             childAspectRatio: 1.55,
             children: [
               _Metric(
-                title: 'Registered women',
-                value: loading ? '—' : '${patients.length}',
+                title: 'Mothers in care',
+                value: loading ? '—' : '${metrics['registered_patients'] ?? patients.length}',
                 icon: Icons.pregnant_woman,
                 color: AppColors.crimson,
               ),
               _Metric(
+                title: 'Active BP alerts',
+                value: loading ? '—' : '${activeAlerts.length}',
+                icon: Icons.warning_amber_rounded,
+                color: activeAlerts.isNotEmpty ? AppColors.critical : AppColors.success,
+              ),
+              _Metric(
                 title: 'Active referrals',
-                value: loading ? '—' : '${referrals.where((x) => x['status'] != 'completed').length}',
+                value: loading ? '—' : '${metrics['active_referrals'] ?? referrals.where((x) => x['status'] != 'completed').length}',
                 icon: Icons.local_hospital,
                 color: AppColors.warning,
               ),
               _Metric(
-                title: 'Facility role',
-                value: (ApiClient.instance.assignments.isEmpty ? 'Staff' : (ApiClient.instance.assignments.first['role'] ?? 'Staff').toString()).replaceAll('_', ' '),
-                icon: Icons.badge_outlined,
-                color: AppColors.success,
-              ),
-              const _Metric(
-                title: 'Sync status',
-                value: 'Online',
-                icon: Icons.cloud_done_outlined,
-                color: AppColors.success,
+                title: 'Incoming referrals',
+                value: loading ? '—' : '${incomingWaiting.length}',
+                icon: Icons.inbox_outlined,
+                color: incomingWaiting.isNotEmpty ? AppColors.critical : AppColors.success,
               ),
             ],
           ),
           const SizedBox(height: 22),
-          const Text('Quick actions', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+
+          // Medical Officer Elevated BP Alerts Center
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Text('Elevated BP screening alerts', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                  if (activeAlerts.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    StatusPill('${activeAlerts.length} ACTION REQUIRED', color: AppColors.critical),
+                  ],
+                ],
+              ),
+              IconButton(onPressed: refresh, icon: const Icon(Icons.refresh, size: 20)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (activeAlerts.isEmpty)
+            P360Card(
+              child: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, color: AppColors.success, size: 26),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'All screened mothers have blood pressure within normal limits across your jurisdiction.',
+                      style: TextStyle(color: AppColors.ink, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...activeAlerts.map((alert) {
+              final pat = alert['patient'] is Map ? alert['patient'] as Map : {};
+              final isRed = alert['severity'] == 'red';
+              final sys = alert['systolic_mmhg'];
+              final dia = alert['diastolic_mmhg'];
+              return Card(
+                elevation: 2,
+                margin: const EdgeInsets.only(bottom: 10),
+                shape: RoundedRectangleBorder(
+                  side: BorderSide(color: isRed ? AppColors.critical : AppColors.warning, width: 1.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: isRed ? AppColors.critical : AppColors.warning,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              pat['full_name'] ?? 'Mother',
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                            ),
+                          ),
+                          StatusPill(
+                            isRed ? 'SEVERE HYPERTENSION' : 'ELEVATED SCREENING',
+                            color: isRed ? AppColors.critical : AppColors.warning,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Patient ID: ${pat['patient_code'] ?? '—'} • Blood Group: ${pat['blood_group'] ?? '—'}',
+                        style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isRed ? AppColors.blush : AppColors.paleRose,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'Verified Reading: $sys / $dia mmHg (${alert['trigger_reason']})',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isRed ? AppColors.critical : AppColors.crimson,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () => _openReviewDialog(alert),
+                            icon: const Icon(Icons.assignment_turned_in, size: 16),
+                            label: const Text('Review Alert'),
+                          ),
+                          const SizedBox(width: 10),
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ReferralScreen(
+                                    initialPatientId: alert['patient_id'],
+                                    initialReason: 'Referral authorized by Medical Officer: Elevated BP $sys/$dia mmHg (${alert['severity'].toString().toUpperCase()})',
+                                  ),
+                                ),
+                              ).then((_) => refresh());
+                            },
+                            icon: const Icon(Icons.local_hospital, size: 16),
+                            label: const Text('Authorise Referral'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+
+          const SizedBox(height: 22),
+          const Text('Quick workflow actions', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
           const SizedBox(height: 12),
           Wrap(
             spacing: 10,
@@ -267,21 +483,28 @@ class _DashboardHomeState extends State<DashboardHome> {
                 label: 'Register mother',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const PatientRegistrationScreen()),
-                ),
+                ).then((_) => refresh()),
               ),
               _ActionChip(
                 icon: Icons.monitor_heart,
-                label: 'Record BP',
+                label: 'Record BP & OCR',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const BPEntryScreen()),
-                ),
+                ).then((_) => refresh()),
               ),
               _ActionChip(
                 icon: Icons.people,
-                label: 'View patients',
+                label: 'Patient directory',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const PatientListScreen()),
-                ),
+                ).then((_) => refresh()),
+              ),
+              _ActionChip(
+                icon: Icons.local_hospital,
+                label: 'Referral board',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ReferralScreen()),
+                ).then((_) => refresh()),
               ),
             ],
           ),
@@ -304,11 +527,11 @@ class _DashboardHomeState extends State<DashboardHome> {
                   ),
                 ),
                 title: Text(p['full_name'] ?? 'Unnamed patient', style: const TextStyle(fontWeight: FontWeight.w700)),
-                subtitle: Text(p['patient_code'] ?? 'Patient record'),
+                subtitle: Text('${p['patient_code']} • Blood: ${p['blood_group'] ?? '—'}'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => PatientDetailScreen(patientId: p['id'].toString())),
-                ),
+                ).then((_) => refresh()),
               )),
           if (!loading && patients.isEmpty)
             const Padding(

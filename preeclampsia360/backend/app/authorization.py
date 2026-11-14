@@ -116,7 +116,7 @@ def assert_patient_access(
                 return patient
 
     # 4. Referral-based clinical access for receiving clinicians
-    if action in ("read", "timeline", "bp_read"):
+    if action in ("read", "timeline", "bp_read", "obstetric_history_read", "questionnaire_read"):
         active_patient_ids = get_active_referred_patient_ids(db, user_facilities)
         if str(patient_id) in active_patient_ids:
             _log_patient_audit(db, user_id, patient, action, "active_referral_clinical_grant", log_audit)
@@ -145,3 +145,4 @@ def _log_patient_audit(db: Client, user_id: str, patient: dict[str, Any], action
     except Exception:
         # Audit logging failure should not crash request but should be traced
         pass
+
