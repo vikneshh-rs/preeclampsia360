@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: preeclampsia360-backend
+    runtime: docker
+    rootDir: preeclampsia360/backend
+    dockerfilePath: Dockerfile
+    plan: free
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: Preeclampsia 360 API
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: SUPABASE_JWT_AUD
+        value: authenticated
+      - key: INTERNAL_AUTH_DOMAIN
+        value: staff.preeclampsia360.invalid
+      - key: CORS_ORIGINS
+        value: "http://localhost:3000,http://localhost:8000,http://localhost:8080,http://127.0.0.1:8000"
