@@ -1,0 +1,8 @@
+import 'package:flutter/material.dart';
+import '../core/theme.dart';
+
+class P360Header extends StatelessWidget { final String title, subtitle; const P360Header(this.title,{super.key,this.subtitle=''}); @override Widget build(BuildContext context)=>Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight:FontWeight.w800,color:AppColors.ink)),if(subtitle.isNotEmpty) Padding(padding:const EdgeInsets.only(top:4),child:Text(subtitle,style:TextStyle(color:AppColors.muted))) ]); }
+class P360Card extends StatelessWidget { final Widget child; final EdgeInsets padding; const P360Card({super.key,required this.child,this.padding=const EdgeInsets.all(16)}); @override Widget build(BuildContext context)=>Card(child:Padding(padding:padding,child:child)); }
+class StatusPill extends StatelessWidget { final String label; final Color color; const StatusPill(this.label,{super.key,this.color=AppColors.success}); @override Widget build(BuildContext context)=>Container(padding:const EdgeInsets.symmetric(horizontal:10,vertical:6),decoration:BoxDecoration(color:color.withValues(alpha:.10),borderRadius:BorderRadius.circular(30)),child:Text(label,style:TextStyle(color:color,fontWeight:FontWeight.w700,fontSize:11))); }
+class LoadingView extends StatelessWidget { const LoadingView({super.key}); @override Widget build(BuildContext context)=>const Center(child:CircularProgressIndicator()); }
+void showMessage(BuildContext context,String text,{bool error=false})=>ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(text),backgroundColor:error?AppColors.critical:AppColors.success));
