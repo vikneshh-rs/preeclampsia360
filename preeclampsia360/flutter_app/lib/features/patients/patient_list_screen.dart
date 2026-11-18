@@ -3,7 +3,6 @@ import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../../shared/ui.dart';
 import 'patient_registration_screen.dart';
-import '../questionnaire/antenatal_questionnaire_screen.dart';
 import '../clinical/bp_entry_screen.dart';
 
 class PatientListScreen extends StatefulWidget {
@@ -387,7 +386,6 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       );
     }
     final p = patient!;
-    final q = Map<String, dynamic>.from(p['questionnaire_data'] ?? {});
     final bpList = List<dynamic>.from(timeline?['bp_measurements'] ?? []);
     final refList = List<dynamic>.from(timeline?['referrals'] ?? []);
 
@@ -399,18 +397,6 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
             icon: const Icon(Icons.edit_outlined),
             tooltip: 'Edit Profile',
             onPressed: _openEditDialog,
-          ),
-          IconButton(
-            icon: const Icon(Icons.assignment_outlined),
-            tooltip: 'Maternal Assessment',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => AntenatalQuestionnaireScreen(
-                  patientId: widget.patientId,
-                  patientName: p['full_name'],
-                ),
-              ),
-            ).then((_) => load()),
           ),
         ],
       ),
@@ -446,43 +432,21 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
           ),
           const SizedBox(height: 12),
           // Quick Action Bar
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.paleRose,
-                    foregroundColor: AppColors.crimson,
-                  ),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => BPEntryScreen(initialPatientId: widget.patientId),
-                    ),
-                  ).then((_) => load()),
-                  icon: const Icon(Icons.monitor_heart, size: 18),
-                  label: const Text('Record BP'),
-                ),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.crimson,
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton.tonalIcon(
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.paleRose,
-                    foregroundColor: AppColors.crimson,
-                  ),
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => AntenatalQuestionnaireScreen(
-                        patientId: widget.patientId,
-                        patientName: p['full_name'],
-                      ),
-                    ),
-                  ).then((_) => load()),
-                  icon: const Icon(Icons.assignment, size: 18),
-                  label: const Text('Assessment'),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => BPEntryScreen(initialPatientId: widget.patientId),
                 ),
-              ),
-            ],
+              ).then((_) => load()),
+              icon: const Icon(Icons.monitor_heart, size: 20),
+              label: const Text('Record Blood Pressure', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
           ),
           const SizedBox(height: 16),
           Row(
@@ -616,52 +580,6 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                       r['status']?.toString().toUpperCase() ?? 'PENDING',
                       color: r['status'] == 'completed' ? AppColors.success : AppColors.warning,
                     ),
-                  ),
-                )),
-          const SizedBox(height: 18),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Maternal assessment responses', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-              TextButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => AntenatalQuestionnaireScreen(
-                      patientId: widget.patientId,
-                      patientName: p['full_name'],
-                    ),
-                  ),
-                ).then((_) => load()),
-                icon: const Icon(Icons.open_in_new, size: 16),
-                label: const Text('Open Questionnaire'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (q.isEmpty)
-            P360Card(
-              child: Row(
-                children: [
-                  const Icon(Icons.assignment_outlined, color: AppColors.muted),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('No questionnaire data captured yet. Tap "Open Questionnaire" to capture maternal history.', style: TextStyle(color: AppColors.muted)),
-                  ),
-                ],
-              ),
-            )
-          else
-            ...q.entries.map((e) => P360Card(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        e.key.replaceAll('_', ' ').toUpperCase(),
-                        style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.crimson),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(e.value.toString()),
-                    ],
                   ),
                 )),
         ],

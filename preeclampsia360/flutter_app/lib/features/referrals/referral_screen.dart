@@ -374,7 +374,7 @@ class _CreateReferralDialogState extends State<_CreateReferralDialog> {
             if (loading) const LinearProgressIndicator(),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: patients.any((p) => p['id'].toString() == patientId) ? patientId : null,
+              initialValue: patients.any((p) => p['id'].toString() == patientId) ? patientId : null,
               decoration: const InputDecoration(labelText: 'Patient'),
               items: patients
                   .map((p) => DropdownMenuItem<String>(
@@ -389,7 +389,7 @@ class _CreateReferralDialogState extends State<_CreateReferralDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: facilities.any((f) => f['id'].toString() == receivingFacilityId) ? receivingFacilityId : null,
+              initialValue: facilities.any((f) => f['id'].toString() == receivingFacilityId) ? receivingFacilityId : null,
               decoration: const InputDecoration(labelText: 'Receiving Facility (Target)'),
               items: facilities
                   .map((f) => DropdownMenuItem<String>(
