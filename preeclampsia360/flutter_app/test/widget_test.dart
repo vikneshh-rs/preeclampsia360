@@ -36,6 +36,10 @@ void main() {
     expect(find.text('Record blood pressure'), findsOneWidget);
     expect(find.text('Manual'), findsOneWidget);
     expect(find.text('Camera OCR'), findsOneWidget);
+    expect(find.text('Urine Protein (Albumin Dipstick)'), findsOneWidget);
+    expect(find.text('Imminent Symptoms (Danger Signs)'), findsOneWidget);
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    await tester.pump();
     expect(find.byType(CheckboxListTile), findsOneWidget);
   });
 

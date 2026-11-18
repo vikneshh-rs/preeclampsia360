@@ -26,6 +26,17 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
   bool scanning = false;
   String method = 'manual';
   String? ocrText;
+  String urineProtein = 'not_tested';
+  final Set<String> imminentSymptoms = {};
+
+  static const List<String> kImminentSymptomsList = [
+    'Severe Headache',
+    'Blurred Vision / Flashes',
+    'Epigastric / RUQ Pain',
+    'Facial / Hand Swelling',
+    'Nausea / Vomiting',
+    'Chest Pain / Dyspnea',
+  ];
 
   @override
   void initState() {
@@ -57,7 +68,6 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
 
   Future<void> scanDisplay() async {
     if (kIsWeb) {
-      // On web or browsers without direct ML Kit, use file upload or demo simulation
       try {
         final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
         if (image == null || !mounted) return;
@@ -104,7 +114,14 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
     }
   }
 
-  void _loadDemoValues(int s, int d, int p, String label) {
+  void _loadDemoValues(
+    int s,
+    int d,
+    int p,
+    String label, {
+    String uProtein = 'not_tested',
+    List<String> symptoms = const [],
+  }) {
     sys.text = s.toString();
     dia.text = d.toString();
     pulse.text = p.toString();
@@ -112,6 +129,9 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
     setState(() {
       confirmed = false;
       method = 'camera_ocr';
+      urineProtein = uProtein;
+      imminentSymptoms.clear();
+      imminentSymptoms.addAll(symptoms);
     });
     showMessage(context, 'Sample readings loaded. Visual confirmation against monitor required before saving.');
   }
@@ -153,12 +173,15 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
         'capture_method': method,
         'worker_confirmed': confirmed,
         'measured_at': DateTime.now().toUtc().toIso8601String(),
+        'urine_protein': urineProtein == 'not_tested' ? null : urineProtein,
+        'imminent_symptoms': imminentSymptoms.toList(),
       });
       if (mounted) {
         final isAlert = res is Map && res['alert_triggered'] == true;
         if (isAlert) {
           final alert = res['alert'] is Map ? res['alert'] as Map : {};
           final sev = (alert['severity'] ?? 'amber').toString();
+          final triggerReason = alert['trigger_reason']?.toString() ?? 'Elevated BP $sVal/$dVal mmHg';
           showDialog(
             context: context,
             barrierDismissible: false,
@@ -170,7 +193,12 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                     color: sev == 'red' ? AppColors.critical : AppColors.warning,
                   ),
                   const SizedBox(width: 8),
-                  const Text('Elevated BP Alert Triggered'),
+                  Expanded(
+                    child: Text(
+                      sev == 'red' ? 'Severe Critical Alert' : 'Elevated Screening Alert',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                  ),
                 ],
               ),
               content: Column(
@@ -198,8 +226,42 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.paleRose),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Clinical Findings:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Text('• BP: $sVal/$dVal mmHg', style: const TextStyle(fontSize: 12)),
+                        Text(
+                          '• Proteinuria: ${urineProtein == "not_tested" ? "Not Tested / Pending" : urineProtein.toUpperCase()}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: (urineProtein != 'not_tested' && urineProtein != 'nil') ? FontWeight.bold : FontWeight.normal,
+                            color: (urineProtein != 'not_tested' && urineProtein != 'nil') ? AppColors.critical : AppColors.ink,
+                          ),
+                        ),
+                        if (imminentSymptoms.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              '• Danger Signs: ${imminentSymptoms.join(", ")}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.critical),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   const Text(
-                    'This reading meets the screening trigger threshold (SBP >= 140 or DBP >= 90 mmHg). This is a screening trigger, not an automated diagnosis of preeclampsia.\n\nAn alert has been dispatched to the Medical Officer dashboard for clinical assessment and referral authorisation.',
+                    'This reading meets screening trigger thresholds (SBP >= 140, DBP >= 90 mmHg, proteinuria, or danger signs). This is a screening trigger, not an automated diagnosis.\n\nAn alert has been dispatched to the Medical Officer dashboard for clinical assessment and referral authorisation.',
                     style: TextStyle(fontSize: 13, height: 1.4),
                   ),
                 ],
@@ -218,7 +280,7 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                       MaterialPageRoute(
                         builder: (_) => ReferralScreen(
                           initialPatientId: patientId,
-                          initialReason: 'Screening alert: Elevated BP $sVal/$dVal mmHg (${sev.toUpperCase()})',
+                          initialReason: 'Screening alert: $triggerReason (${sev.toUpperCase()})',
                         ),
                       ),
                     );
@@ -235,7 +297,11 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
         sys.clear();
         dia.clear();
         pulse.clear();
-        setState(() => confirmed = false);
+        setState(() {
+          confirmed = false;
+          urineProtein = 'not_tested';
+          imminentSymptoms.clear();
+        });
       }
     } catch (e) {
       if (mounted) showMessage(context, e.toString(), error: true);
@@ -284,14 +350,27 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                               tooltip: 'Load Sample Monitor Reading',
                               icon: const Icon(Icons.science_outlined),
                               onSelected: (v) {
-                                if (v == 'elevated') _loadDemoValues(154, 98, 86, 'Elevated BP');
-                                if (v == 'severe') _loadDemoValues(168, 114, 92, 'Severe BP');
-                                if (v == 'normal') _loadDemoValues(118, 76, 72, 'Normal BP');
+                                if (v == 'elevated') {
+                                  _loadDemoValues(154, 98, 86, 'Elevated BP', uProtein: '1+');
+                                }
+                                if (v == 'severe') {
+                                  _loadDemoValues(
+                                    168,
+                                    114,
+                                    92,
+                                    'Severe BP',
+                                    uProtein: '2+',
+                                    symptoms: ['Severe Headache', 'Blurred Vision / Flashes'],
+                                  );
+                                }
+                                if (v == 'normal') {
+                                  _loadDemoValues(118, 76, 72, 'Normal BP', uProtein: 'nil');
+                                }
                               },
                               itemBuilder: (_) => const [
-                                PopupMenuItem(value: 'elevated', child: Text('Demo: Elevated BP (154/98 mmHg)')),
-                                PopupMenuItem(value: 'severe', child: Text('Demo: Severe BP (168/114 mmHg)')),
-                                PopupMenuItem(value: 'normal', child: Text('Demo: Normal BP (118/76 mmHg)')),
+                                PopupMenuItem(value: 'elevated', child: Text('Demo: Elevated BP (154/98 mmHg, 1+ Protein)')),
+                                PopupMenuItem(value: 'severe', child: Text('Demo: Severe BP (168/114 mmHg, 2+ & Danger Signs)')),
+                                PopupMenuItem(value: 'normal', child: Text('Demo: Normal BP (118/76 mmHg, Nil)')),
                               ],
                             ),
                           ],
@@ -366,6 +445,118 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
             decoration: const InputDecoration(labelText: 'Pulse (bpm) — optional'),
           ),
           const SizedBox(height: 14),
+          DropdownButtonFormField<String>(
+            key: ValueKey('urine_$urineProtein'),
+            initialValue: urineProtein,
+            decoration: const InputDecoration(
+              labelText: 'Urine Protein (Albumin Dipstick)',
+              prefixIcon: Icon(Icons.water_drop_outlined),
+              helperText: 'Qualitative dipstick screening for proteinuria',
+            ),
+            items: const [
+              DropdownMenuItem(value: 'not_tested', child: Text('Not Tested / Pending')),
+              DropdownMenuItem(value: 'nil', child: Text('Nil / Negative (0)')),
+              DropdownMenuItem(value: 'trace', child: Text('Trace')),
+              DropdownMenuItem(value: '1+', child: Text('+1 (30 mg/dL)')),
+              DropdownMenuItem(value: '2+', child: Text('+2 (100 mg/dL)')),
+              DropdownMenuItem(value: '3+', child: Text('+3 (300 mg/dL)')),
+              DropdownMenuItem(value: '4+', child: Text('+4 (1000 mg/dL)')),
+            ],
+            onChanged: (v) {
+              if (v != null) setState(() => urineProtein = v);
+            },
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: imminentSymptoms.isNotEmpty ? AppColors.paleRose : Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: imminentSymptoms.isNotEmpty ? AppColors.critical : AppColors.border,
+                width: imminentSymptoms.isNotEmpty ? 1.5 : 1.0,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 20,
+                      color: imminentSymptoms.isNotEmpty ? AppColors.critical : AppColors.ink,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'Imminent Symptoms (Danger Signs)',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                    if (imminentSymptoms.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.critical,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${imminentSymptoms.length} selected',
+                          style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Select any symptoms indicating impending eclampsia or severe disease:',
+                  style: TextStyle(fontSize: 12, color: AppColors.muted),
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: kImminentSymptomsList.map((symptom) {
+                    final isSelected = imminentSymptoms.contains(symptom);
+                    return FilterChip(
+                      label: Text(symptom),
+                      selected: isSelected,
+                      selectedColor: AppColors.blush,
+                      checkmarkColor: AppColors.crimson,
+                      labelStyle: TextStyle(
+                        fontSize: 12,
+                        color: isSelected ? AppColors.crimson : AppColors.ink,
+                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      ),
+                      onSelected: (selected) {
+                        setState(() {
+                          if (selected) {
+                            imminentSymptoms.add(symptom);
+                          } else {
+                            imminentSymptoms.remove(symptom);
+                          }
+                        });
+                      },
+                    );
+                  }).toList(),
+                ),
+                if (imminentSymptoms.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      '⚠ Danger signs present: Triggers high-priority clinical referral.',
+                      style: TextStyle(
+                        color: AppColors.critical,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           CheckboxListTile(
             value: confirmed,
             onChanged: (v) => setState(() => confirmed = v ?? false),
@@ -381,7 +572,7 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'Screening trigger threshold: SBP >= 140 or DBP >= 90 mmHg. This is a screening trigger, not an automated clinical diagnosis of preeclampsia.',
+            'Screening trigger threshold: SBP >= 140, DBP >= 90 mmHg, proteinuria (>= 1+), or imminent symptoms. This is a screening trigger, not an automated clinical diagnosis.',
             style: TextStyle(color: AppColors.muted, fontSize: 12),
           ),
         ],

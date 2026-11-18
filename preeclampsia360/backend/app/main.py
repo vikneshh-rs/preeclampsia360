@@ -276,7 +276,15 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
     patient = assert_patient_access(db, user["sub"], payload.patient_id, action="bp_write")
 
     row = {
-        **payload.model_dump(mode="json"),
+        "patient_id": payload.patient_id,
+        "systolic_mmhg": payload.systolic_mmhg,
+        "diastolic_mmhg": payload.diastolic_mmhg,
+        "pulse_bpm": payload.pulse_bpm,
+        "device_id": payload.device_id,
+        "capture_method": payload.capture_method,
+        "ocr_confidence": payload.ocr_confidence,
+        "worker_confirmed": payload.worker_confirmed,
+        "measured_at": payload.measured_at.isoformat(),
         "facility_id": patient["facility_id"],
         "recorded_by": user["sub"],
         "verification_status": "worker_verified",
@@ -286,6 +294,21 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
         raise HTTPException(status_code=400, detail="Measurement could not be saved")
     
     measurement = result.data[0]
+
+    # Store clinical markers (urine protein & imminent symptoms) in measurement_captures
+    if payload.urine_protein or payload.imminent_symptoms:
+        try:
+            db.table("measurement_captures").insert({
+                "measurement_id": measurement["id"],
+                "extracted_values": {
+                    "urine_protein": payload.urine_protein,
+                    "imminent_symptoms": payload.imminent_symptoms,
+                },
+                "ocr_engine": payload.capture_method,
+            }).execute()
+        except Exception:
+            pass
+
     db.table("audit_logs").insert({
         "actor_user_id": user["sub"],
         "facility_id": patient["facility_id"],
@@ -296,15 +319,33 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
             "systolic": payload.systolic_mmhg,
             "diastolic": payload.diastolic_mmhg,
             "patient_id": payload.patient_id,
+            "urine_protein": payload.urine_protein,
+            "imminent_symptoms": payload.imminent_symptoms,
         },
     }).execute()
 
-    # Backend alert evaluation after verification:
-    # Trigger elevated BP alert when SBP >= 140 OR DBP >= 90 mmHg
-    is_elevated = payload.systolic_mmhg >= 140 or payload.diastolic_mmhg >= 90
+    # Backend alert evaluation:
+    # Trigger elevated BP alert when SBP >= 140 OR DBP >= 90 mmHg OR imminent symptoms OR proteinuria
+    has_symptoms = bool(payload.imminent_symptoms)
+    has_protein = bool(payload.urine_protein and payload.urine_protein not in {"nil", "not_tested", "trace"})
+    is_elevated = (payload.systolic_mmhg >= 140 or payload.diastolic_mmhg >= 90) or has_symptoms or has_protein
     alert_record = None
     if is_elevated:
-        severity = "red" if (payload.systolic_mmhg >= 160 or payload.diastolic_mmhg >= 110) else "amber"
+        is_critical = (
+            payload.systolic_mmhg >= 160 or
+            payload.diastolic_mmhg >= 110 or
+            has_symptoms or
+            payload.urine_protein in {"2+", "3+", "4+"}
+        )
+        severity = "red" if is_critical else "amber"
+
+        trigger_parts = [f"BP: {payload.systolic_mmhg}/{payload.diastolic_mmhg} mmHg"]
+        if payload.urine_protein and payload.urine_protein not in {"nil", "not_tested"}:
+            trigger_parts.append(f"Proteinuria: {payload.urine_protein}")
+        if payload.imminent_symptoms:
+            trigger_parts.append(f"Imminent Symptoms: {', '.join(payload.imminent_symptoms)}")
+        trigger_reason = " • ".join(trigger_parts)
+
         alert_row = {
             "patient_id": str(payload.patient_id),
             "measurement_id": measurement["id"],
@@ -312,7 +353,7 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
             "worker_user_id": user["sub"],
             "alert_type": "ELEVATED_BP",
             "severity": severity,
-            "trigger_reason": f"Elevated blood pressure: {payload.systolic_mmhg}/{payload.diastolic_mmhg} mmHg",
+            "trigger_reason": trigger_reason,
             "systolic_mmhg": payload.systolic_mmhg,
             "diastolic_mmhg": payload.diastolic_mmhg,
             "status": "active",

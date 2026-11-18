@@ -72,6 +72,8 @@ class BPMeasurementCreate(BaseModel):
     ocr_confidence: Optional[float] = Field(default=None, ge=0, le=1)
     worker_confirmed: bool = False
     measured_at: datetime
+    urine_protein: Optional[str] = None
+    imminent_symptoms: list[str] = Field(default_factory=list)
 
 class BPMeasurementOut(BaseModel):
     id: str
