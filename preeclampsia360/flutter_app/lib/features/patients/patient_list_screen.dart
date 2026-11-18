@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../shared/ui.dart';
 import 'patient_registration_screen.dart';
 import '../clinical/bp_entry_screen.dart';
+import '../trends/bp_trends_tab.dart';
 
 class PatientListScreen extends StatefulWidget {
   const PatientListScreen({super.key});
@@ -389,200 +390,242 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     final bpList = List<dynamic>.from(timeline?['bp_measurements'] ?? []);
     final refList = List<dynamic>.from(timeline?['referrals'] ?? []);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Patient 360 Profile'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'Edit Profile',
-            onPressed: _openEditDialog,
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(18),
-        children: [
-          P360Card(
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 30,
-                  backgroundColor: AppColors.blush,
-                  child: Text(
-                    (p['full_name'] ?? 'P').toString().substring(0, 1).toUpperCase(),
-                    style: const TextStyle(color: AppColors.crimson, fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(p['full_name'] ?? '', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
-                      Text(p['patient_code'] ?? '', style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.bold)),
-                      if (p['phone'] != null) Text('Phone: ${p['phone']}', style: const TextStyle(fontSize: 13, color: AppColors.muted)),
-                      if (p['address'] != null && p['address'].toString().isNotEmpty)
-                        Text('Address: ${p['address']}', style: const TextStyle(fontSize: 12, color: AppColors.muted)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          // Quick Action Bar
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.crimson,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                p['full_name'] ?? 'Patient Profile',
+                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
               ),
-              onPressed: () => Navigator.of(context).push(
+              Text(
+                '${p['patient_code'] ?? ''} • Blood: ${p['blood_group'] ?? '—'}',
+                style: const TextStyle(fontSize: 11, color: AppColors.muted),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit Profile',
+              onPressed: _openEditDialog,
+            ),
+          ],
+          bottom: const TabBar(
+            labelColor: Color(0xFF7F1D3A),
+            unselectedLabelColor: AppColors.muted,
+            indicatorColor: Color(0xFF7F1D3A),
+            indicatorWeight: 3,
+            labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            tabs: [
+              Tab(icon: Icon(Icons.show_chart, size: 18), text: 'BP Trends'),
+              Tab(icon: Icon(Icons.person_outline, size: 18), text: 'Profile & History'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            // Tab 1: BP Trends & Risk Analytics
+            BPTrendsTab(
+              patientId: widget.patientId,
+              patientName: p['full_name'] ?? 'Mother',
+              onRecordBPTapped: () => Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) => BPEntryScreen(initialPatientId: widget.patientId),
                 ),
               ).then((_) => load()),
-              icon: const Icon(Icons.monitor_heart, size: 20),
-              label: const Text('Record Blood Pressure', style: TextStyle(fontWeight: FontWeight.w700)),
             ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Current pregnancy details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-              TextButton.icon(
-                onPressed: _openEditDialog,
-                icon: const Icon(Icons.edit, size: 16),
-                label: const Text('Edit'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          P360Card(
-            child: Wrap(
-              spacing: 20,
-              runSpacing: 16,
+
+            // Tab 2: Profile & History
+            ListView(
+              padding: const EdgeInsets.all(18),
               children: [
-                _Info('Blood group', p['blood_group']),
-                _Info('LMP', p['lmp']),
-                _Info('EDD', p['edd']),
-                _Info('Gravida (G)', p['gravida']),
-                _Info('Parity (P)', p['parity']),
-                _Info('Abortions (A)', p['abortions']),
-                _Info('Living children (L)', p['living_children']),
+                P360Card(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: AppColors.blush,
+                        child: Text(
+                          (p['full_name'] ?? 'P').toString().substring(0, 1).toUpperCase(),
+                          style: const TextStyle(color: AppColors.crimson, fontSize: 24, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(p['full_name'] ?? '', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                            Text(p['patient_code'] ?? '', style: const TextStyle(color: AppColors.muted, fontWeight: FontWeight.bold)),
+                            if (p['phone'] != null) Text('Phone: ${p['phone']}', style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+                            if (p['address'] != null && p['address'].toString().isNotEmpty)
+                              Text('Address: ${p['address']}', style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Quick Action Bar
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.crimson,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => BPEntryScreen(initialPatientId: widget.patientId),
+                      ),
+                    ).then((_) => load()),
+                    icon: const Icon(Icons.monitor_heart, size: 20),
+                    label: const Text('Record Blood Pressure', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Current pregnancy details', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                    TextButton.icon(
+                      onPressed: _openEditDialog,
+                      icon: const Icon(Icons.edit, size: 16),
+                      label: const Text('Edit'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                P360Card(
+                  child: Wrap(
+                    spacing: 20,
+                    runSpacing: 16,
+                    children: [
+                      _Info('Blood group', p['blood_group']),
+                      _Info('LMP', p['lmp']),
+                      _Info('EDD', p['edd']),
+                      _Info('Gravida (G)', p['gravida']),
+                      _Info('Parity (P)', p['parity']),
+                      _Info('Abortions (A)', p['abortions']),
+                      _Info('Living children (L)', p['living_children']),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                // Obstetric History Repeatable Records
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Obstetric history & past pregnancies', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                    TextButton.icon(
+                      onPressed: _openAddObstetricHistoryDialog,
+                      icon: const Icon(Icons.add_circle_outline, size: 18),
+                      label: const Text('+ Add Pregnancy'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (obstetricHistory.isEmpty)
+                  P360Card(
+                    child: Row(
+                      children: [
+                        const Icon(Icons.history_edu, color: AppColors.muted),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text('No past pregnancy records recorded. Tap "+ Add Pregnancy" for multi-gravida mothers.', style: TextStyle(color: AppColors.muted)),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  ...obstetricHistory.map((ob) {
+                    final del = ob['delivery_details'] is Map ? ob['delivery_details'] as Map : {};
+                    final baby = ob['baby_details'] is Map ? ob['baby_details'] as Map : {};
+                    final comp = ob['antenatal_complications'] ?? 'None';
+                    final hasPreeclampsia = comp.toString().toLowerCase().contains('preeclampsia') ||
+                        comp.toString().toLowerCase().contains('eclampsia') ||
+                        comp.toString().toLowerCase().contains('htn');
+                    return Card(
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: hasPreeclampsia ? AppColors.blush : AppColors.paleRose,
+                          child: Text(
+                            'P${ob['pregnancy_number']}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: hasPreeclampsia ? AppColors.critical : AppColors.crimson,
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          'Pregnancy #${ob['pregnancy_number']}: ${del['outcome'] ?? 'Delivery'} (${del['year'] ?? ''})',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(
+                          'Complications: $comp\nBaby: ${baby['gender'] ?? '—'} • Weight: ${baby['birth_weight_kg'] ?? '—'} kg',
+                        ),
+                        trailing: hasPreeclampsia
+                            ? const StatusPill('PREV PE RISK', color: AppColors.critical)
+                            : const StatusPill('RECORDED', color: AppColors.success),
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 18),
+                const Text('Recent BP measurements', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                const SizedBox(height: 8),
+                if (bpList.isEmpty)
+                  const P360Card(child: Text('No recorded blood pressure measurements yet.'))
+                else
+                  ...bpList.take(5).map((bp) {
+                    final sys = bp['systolic_mmhg'];
+                    final dia = bp['diastolic_mmhg'];
+                    final isHigh = (sys is num && sys >= 140) || (dia is num && dia >= 90);
+                    return Card(
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.monitor_heart,
+                          color: isHigh ? AppColors.critical : AppColors.success,
+                        ),
+                        title: Text(
+                          '$sys / $dia mmHg',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: isHigh ? AppColors.critical : AppColors.ink,
+                          ),
+                        ),
+                        subtitle: Text('Pulse: ${bp['pulse_bpm'] ?? '—'} bpm  •  ${bp['measured_at']?.toString().substring(0, 10) ?? ''}'),
+                        trailing: StatusPill(
+                          isHigh ? 'ELEVATED' : 'NORMAL',
+                          color: isHigh ? AppColors.critical : AppColors.success,
+                        ),
+                      ),
+                    );
+                  }),
+                const SizedBox(height: 18),
+                const Text('Referrals history', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                const SizedBox(height: 8),
+                if (refList.isEmpty)
+                  const P360Card(child: Text('No referrals for this patient.'))
+                else
+                  ...refList.map((r) => Card(
+                        child: ListTile(
+                          title: Text(r['reason'] ?? 'Referral'),
+                          subtitle: Text('Status: ${r['status']}  •  ${r['created_at']?.toString().substring(0, 10) ?? ''}'),
+                          trailing: StatusPill(
+                            r['status']?.toString().toUpperCase() ?? 'PENDING',
+                            color: r['status'] == 'completed' ? AppColors.success : AppColors.warning,
+                          ),
+                        ),
+                      )),
               ],
             ),
-          ),
-          const SizedBox(height: 18),
-          // Obstetric History Repeatable Records
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Obstetric history & past pregnancies', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-              TextButton.icon(
-                onPressed: _openAddObstetricHistoryDialog,
-                icon: const Icon(Icons.add_circle_outline, size: 18),
-                label: const Text('+ Add Pregnancy'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (obstetricHistory.isEmpty)
-            P360Card(
-              child: Row(
-                children: [
-                  const Icon(Icons.history_edu, color: AppColors.muted),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('No past pregnancy records recorded. Tap "+ Add Pregnancy" for multi-gravida mothers.', style: TextStyle(color: AppColors.muted)),
-                  ),
-                ],
-              ),
-            )
-          else
-            ...obstetricHistory.map((ob) {
-              final del = ob['delivery_details'] is Map ? ob['delivery_details'] as Map : {};
-              final baby = ob['baby_details'] is Map ? ob['baby_details'] as Map : {};
-              final comp = ob['antenatal_complications'] ?? 'None';
-              final hasPreeclampsia = comp.toString().toLowerCase().contains('preeclampsia') ||
-                  comp.toString().toLowerCase().contains('eclampsia') ||
-                  comp.toString().toLowerCase().contains('htn');
-              return Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: hasPreeclampsia ? AppColors.blush : AppColors.paleRose,
-                    child: Text(
-                      'P${ob['pregnancy_number']}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: hasPreeclampsia ? AppColors.critical : AppColors.crimson,
-                      ),
-                    ),
-                  ),
-                  title: Text(
-                    'Pregnancy #${ob['pregnancy_number']}: ${del['outcome'] ?? 'Delivery'} (${del['year'] ?? ''})',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: Text(
-                    'Complications: $comp\nBaby: ${baby['gender'] ?? '—'} • Weight: ${baby['birth_weight_kg'] ?? '—'} kg',
-                  ),
-                  trailing: hasPreeclampsia
-                      ? const StatusPill('PREV PE RISK', color: AppColors.critical)
-                      : const StatusPill('RECORDED', color: AppColors.success),
-                ),
-              );
-            }),
-          const SizedBox(height: 18),
-          const Text('Recent BP measurements', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-          const SizedBox(height: 8),
-          if (bpList.isEmpty)
-            const P360Card(child: Text('No recorded blood pressure measurements yet.'))
-          else
-            ...bpList.take(5).map((bp) {
-              final sys = bp['systolic_mmhg'];
-              final dia = bp['diastolic_mmhg'];
-              final isHigh = (sys is num && sys >= 140) || (dia is num && dia >= 90);
-              return Card(
-                child: ListTile(
-                  leading: Icon(
-                    Icons.monitor_heart,
-                    color: isHigh ? AppColors.critical : AppColors.success,
-                  ),
-                  title: Text(
-                    '$sys / $dia mmHg',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      color: isHigh ? AppColors.critical : AppColors.ink,
-                    ),
-                  ),
-                  subtitle: Text('Pulse: ${bp['pulse_bpm'] ?? '—'} bpm  •  ${bp['measured_at']?.toString().substring(0, 10) ?? ''}'),
-                  trailing: StatusPill(
-                    isHigh ? 'ELEVATED' : 'NORMAL',
-                    color: isHigh ? AppColors.critical : AppColors.success,
-                  ),
-                ),
-              );
-            }),
-          const SizedBox(height: 18),
-          const Text('Referrals history', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-          const SizedBox(height: 8),
-          if (refList.isEmpty)
-            const P360Card(child: Text('No referrals for this patient.'))
-          else
-            ...refList.map((r) => Card(
-                  child: ListTile(
-                    title: Text(r['reason'] ?? 'Referral'),
-                    subtitle: Text('Status: ${r['status']}  •  ${r['created_at']?.toString().substring(0, 10) ?? ''}'),
-                    trailing: StatusPill(
-                      r['status']?.toString().toUpperCase() ?? 'PENDING',
-                      color: r['status'] == 'completed' ? AppColors.success : AppColors.warning,
-                    ),
-                  ),
-                )),
-        ],
+          ],
+        ),
       ),
     );
   }

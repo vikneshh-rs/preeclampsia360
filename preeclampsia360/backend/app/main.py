@@ -10,6 +10,7 @@ from .auth import router as auth_router
 from .workflows import router as workflows_router
 from .sync import router as sync_router
 from .ocr import router as ocr_router
+from .trends import router as trends_router
 from .authorization import (
     assert_patient_access,
     get_accessible_facility_ids,
@@ -35,6 +36,7 @@ app.include_router(auth_router)
 app.include_router(workflows_router)
 app.include_router(sync_router)
 app.include_router(ocr_router)
+app.include_router(trends_router)
 
 @app.get("/health")
 def health():
