@@ -52,87 +52,94 @@ class _PatientListScreenState extends State<PatientListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Row(
-            children: [
-              const Expanded(
-                child: P360Header('Pregnant women', subtitle: 'Patients assigned to your facility'),
+    final isPushed = Navigator.of(context).canPop();
+    return Scaffold(
+      backgroundColor: AppColors.warmWhite,
+      appBar: isPushed ? AppBar(title: const Text('Patient Directory')) : null,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: P360Header('Pregnant women', subtitle: 'Patients assigned to your facility'),
+                  ),
+                  IconButton.filledTonal(
+                    onPressed: () => Navigator.of(context)
+                        .push(MaterialPageRoute(builder: (_) => const PatientRegistrationScreen()))
+                        .then((_) => load()),
+                    icon: const Icon(Icons.add),
+                  ),
+                ],
               ),
-              IconButton.filledTonal(
-                onPressed: () => Navigator.of(context)
-                    .push(MaterialPageRoute(builder: (_) => const PatientRegistrationScreen()))
-                    .then((_) => load()),
-                icon: const Icon(Icons.add),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: TextField(
-            controller: search,
-            onSubmitted: (_) => load(),
-            decoration: InputDecoration(
-              hintText: 'Search by patient name',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: IconButton(onPressed: load, icon: const Icon(Icons.arrow_forward)),
             ),
-          ),
-        ),
-        Expanded(
-          child: loading
-              ? const LoadingView()
-              : error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.critical)),
-                            const SizedBox(height: 12),
-                            FilledButton(onPressed: load, child: const Text('Retry')),
-                          ],
-                        ),
-                      ),
-                    )
-                  : items.isEmpty
-                      ? const Center(child: Text('No patient records found.'))
-                      : RefreshIndicator(
-                          onRefresh: load,
-                          child: ListView.separated(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: items.length,
-                            separatorBuilder: (_, __) => const SizedBox(height: 10),
-                            itemBuilder: (context, i) {
-                              final p = items[i];
-                              return Card(
-                                child: ListTile(
-                                  onTap: () => Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (_) => PatientDetailScreen(patientId: p['id']),
-                                    ),
-                                  ).then((_) => load()),
-                                  leading: CircleAvatar(
-                                    backgroundColor: AppColors.paleRose,
-                                    child: Text(
-                                      p['full_name'][0].toUpperCase(),
-                                      style: const TextStyle(color: AppColors.crimson, fontWeight: FontWeight.bold),
-                                    ),
-                                  ),
-                                  title: Text(p['full_name'], style: const TextStyle(fontWeight: FontWeight.w700)),
-                                  subtitle: Text('${p['patient_code']} • Blood: ${p['blood_group'] ?? '—'} • ${p['phone'] ?? 'No phone'}'),
-                                  trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
-                                ),
-                              );
-                            },
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: TextField(
+                controller: search,
+                onSubmitted: (_) => load(),
+                decoration: InputDecoration(
+                  hintText: 'Search by patient name',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(onPressed: load, icon: const Icon(Icons.arrow_forward)),
+                ),
+              ),
+            ),
+            Expanded(
+              child: loading
+                  ? const LoadingView()
+                  : error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(error!, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.critical)),
+                                const SizedBox(height: 12),
+                                FilledButton(onPressed: load, child: const Text('Retry')),
+                              ],
+                            ),
                           ),
-                        ),
+                        )
+                      : items.isEmpty
+                          ? const Center(child: Text('No patient records found.'))
+                          : RefreshIndicator(
+                              onRefresh: load,
+                              child: ListView.separated(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: items.length,
+                                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                                itemBuilder: (context, i) {
+                                  final p = items[i];
+                                  return Card(
+                                    child: ListTile(
+                                      onTap: () => Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => PatientDetailScreen(patientId: p['id']),
+                                        ),
+                                      ).then((_) => load()),
+                                      leading: CircleAvatar(
+                                        backgroundColor: AppColors.paleRose,
+                                        child: Text(
+                                          p['full_name'][0].toUpperCase(),
+                                          style: const TextStyle(color: AppColors.crimson, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                      title: Text(p['full_name'], style: const TextStyle(fontWeight: FontWeight.w700)),
+                                      subtitle: Text('${p['patient_code']} • Blood: ${p['blood_group'] ?? '—'} • ${p['phone'] ?? 'No phone'}'),
+                                      trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
