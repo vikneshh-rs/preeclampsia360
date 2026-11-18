@@ -42,6 +42,9 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
   final baby = TextEditingController();
   final family = TextEditingController();
 
+  final Map<String, dynamic> answers = {};
+  final Map<String, TextEditingController> _extra = {};
+
   @override
   void dispose() {
     name.dispose();
@@ -70,7 +73,14 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
     delivery.dispose();
     baby.dispose();
     family.dispose();
+    for (final c in _extra.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  TextEditingController _controller(String key) {
+    return _extra.putIfAbsent(key, () => TextEditingController());
   }
 
   int? _int(String v) => int.tryParse(v.trim());
@@ -111,6 +121,25 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
         },
         'family_history': {
           'history': family.text.trim(),
+        },
+        'presenting_complaints': answers,
+        'trimester_1': {
+          'visits_and_remarks': _extra['t1_visits']?.text.trim() ?? '',
+          'hyperemesis': answers['hyperemesis'],
+          'fever_rashes': answers['fever_rashes'],
+          'dysuria': answers['dysuria'],
+        },
+        'trimester_2': {
+          'preeclampsia_symptoms': answers['t2_preeclampsia_symptoms'],
+          'edema': answers['t2_edema'],
+          'quickening': answers['quickening'],
+          'dipsi_result': _extra['dipsi']?.text.trim() ?? '',
+          'anomaly_scan_remarks': _extra['anomaly_scan']?.text.trim() ?? '',
+        },
+        'trimester_3': {
+          'fetal_movements': answers['fetal_movements'],
+          'bladder_bowel': answers['bladder_bowel'],
+          'visits_and_remarks': _extra['t3_visits']?.text.trim() ?? '',
         },
       };
 
@@ -180,6 +209,7 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
       'Personal details',
       'Obstetric history',
       'Medical & lifestyle',
+      'Pregnancy assessment',
     ];
 
     return Scaffold(
@@ -194,12 +224,12 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Step ${step + 1} of 3  •  ${titles[step]}',
+                    'Step ${step + 1} of 4  •  ${titles[step]}',
                     style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.crimson),
                   ),
                   const SizedBox(height: 10),
                   LinearProgressIndicator(
-                    value: (step + 1) / 3,
+                    value: (step + 1) / 4,
                     color: AppColors.crimson,
                     backgroundColor: AppColors.blush,
                     borderRadius: BorderRadius.circular(8),
@@ -249,6 +279,37 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
                     _field('Diet history / 24-hour recall', diet, maxLines: 3),
                     _field('Family history (congenital anomalies, multiple pregnancy, chronic disorders)', family, maxLines: 3),
                   ],
+                  if (step == 3) ...[
+                    _section('Presenting complaints'),
+                    _question('Persistent headache?', 'headache'),
+                    _question('Blurred vision?', 'blurred_vision'),
+                    _question('Swelling of face or hands?', 'swelling'),
+                    _question('Upper abdominal pain?', 'upper_abdominal_pain'),
+                    _question('Bleeding per vaginum?', 'bleeding_pv'),
+                    _question('Leaking per vaginum?', 'leaking_pv'),
+                    _section('First trimester'),
+                    _question('Hyperemesis?', 'hyperemesis'),
+                    _question('Fever with rashes?', 'fever_rashes'),
+                    _question('Pain during urination?', 'dysuria'),
+                    _field('Antenatal visits / remarks', _controller('t1_visits'), maxLines: 2),
+                    _section('Second trimester'),
+                    _question('Symptoms of preeclampsia?', 't2_preeclampsia_symptoms'),
+                    _question('Edema?', 't2_edema'),
+                    _question('Fetal quickening noted?', 'quickening'),
+                    _field('DIPSI result', _controller('dipsi')),
+                    _field('Anomaly scan remarks', _controller('anomaly_scan'), maxLines: 2),
+                    _section('Third trimester'),
+                    _question('Fetal movements normal?', 'fetal_movements'),
+                    _question('Bladder or bowel disturbances?', 'bladder_bowel'),
+                    _field('Antenatal visits / remarks', _controller('t3_visits'), maxLines: 2),
+                    const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Text(
+                        'This form records history. Clinical risk classification must be performed using an approved, versioned clinical protocol by authorised clinical staff.',
+                        style: TextStyle(color: AppColors.muted, fontSize: 12),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -269,14 +330,14 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
                       style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
                       onPressed: saving
                           ? null
-                          : () => step < 2 ? setState(() => step++) : save(),
+                          : () => step < 3 ? setState(() => step++) : save(),
                       child: saving
                           ? const SizedBox(
                               height: 18,
                               width: 18,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                             )
-                          : Text(step < 2 ? 'Continue' : 'Save patient'),
+                          : Text(step < 3 ? 'Continue' : 'Save patient'),
                     ),
                   ),
                 ],
@@ -311,6 +372,30 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
           keyboardType: numeric ? TextInputType.number : TextInputType.text,
           validator: required ? (v) => v == null || v.trim().isEmpty ? 'Required field' : null : null,
           decoration: InputDecoration(labelText: label),
+        ),
+      );
+
+  Widget _question(String label, String key) => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: P360Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                key: ValueKey('q_${key}_${answers[key]}'),
+                initialValue: answers[key] as String?,
+                decoration: const InputDecoration(isDense: true, labelText: 'Response'),
+                items: const [
+                  DropdownMenuItem(value: 'yes', child: Text('Yes')),
+                  DropdownMenuItem(value: 'no', child: Text('No')),
+                  DropdownMenuItem(value: 'unknown', child: Text('Not known')),
+                ],
+                onChanged: (v) => setState(() => answers[key] = v),
+              ),
+            ],
+          ),
         ),
       );
 }
