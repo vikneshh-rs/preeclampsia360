@@ -158,10 +158,28 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
   bool loading = true;
   String? error;
 
+  // Investigation lab parameter controllers
+  final hbCtrl = TextEditingController();
+  final ureaCtrl = TextEditingController();
+  final plateletCtrl = TextEditingController();
+  final creatinineCtrl = TextEditingController();
+  final lftCtrl = TextEditingController();
+  bool savingInvestigation = false;
+
   @override
   void initState() {
     super.initState();
     load();
+  }
+
+  @override
+  void dispose() {
+    hbCtrl.dispose();
+    ureaCtrl.dispose();
+    plateletCtrl.dispose();
+    creatinineCtrl.dispose();
+    lftCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -170,6 +188,14 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       final t = await ApiClient.instance.get('/api/v1/patients/${widget.patientId}/timeline');
       final ob = await ApiClient.instance.get('/api/v1/patients/${widget.patientId}/obstetric-history');
       if (mounted) {
+        final qData = p['questionnaire_data'] is Map ? Map<String, dynamic>.from(p['questionnaire_data']) : <String, dynamic>{};
+        final inv = qData['investigations'] is Map ? Map<String, dynamic>.from(qData['investigations']) : <String, dynamic>{};
+        hbCtrl.text = inv['hb']?.toString() ?? '';
+        ureaCtrl.text = inv['urea']?.toString() ?? '';
+        plateletCtrl.text = inv['platelet']?.toString() ?? '';
+        creatinineCtrl.text = inv['creatinine']?.toString() ?? '';
+        lftCtrl.text = inv['lft']?.toString() ?? '';
+
         setState(() {
           patient = Map<String, dynamic>.from(p);
           timeline = Map<String, dynamic>.from(t);
@@ -180,6 +206,40 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
       if (mounted) setState(() => error = e.toString());
     } finally {
       if (mounted) setState(() => loading = false);
+    }
+  }
+
+  Future<void> _saveInvestigations() async {
+    setState(() => savingInvestigation = true);
+    try {
+      final qData = Map<String, dynamic>.from(patient?['questionnaire_data'] ?? {});
+      qData['investigations'] = {
+        'hb': hbCtrl.text.trim(),
+        'urea': ureaCtrl.text.trim(),
+        'platelet': plateletCtrl.text.trim(),
+        'creatinine': creatinineCtrl.text.trim(),
+        'lft': lftCtrl.text.trim(),
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      final updated = await ApiClient.instance.put('/api/v1/patients/${widget.patientId}', {
+        'questionnaire_data': qData,
+      });
+
+      if (mounted) {
+        setState(() {
+          patient = Map<String, dynamic>.from(updated);
+        });
+        showMessage(context, 'Investigation details saved successfully.');
+      }
+    } catch (err) {
+      if (mounted) {
+        showMessage(context, 'Failed to save investigations: $err', error: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => savingInvestigation = false);
+      }
     }
   }
 
@@ -606,6 +666,193 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                       ),
                     );
                   }),
+                const SizedBox(height: 18),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text('Investigation', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                    if (patient?['questionnaire_data']?['investigations']?['updated_at'] != null)
+                      const Row(
+                        children: [
+                          Icon(Icons.check_circle_outline, size: 14, color: AppColors.success),
+                          SizedBox(width: 4),
+                          Text(
+                            'Recorded',
+                            style: TextStyle(fontSize: 12, color: AppColors.success, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                P360Card(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Laboratory Investigations',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: AppColors.crimson),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Collect maternal lab parameters for clinical preeclampsia screening.',
+                        style: TextStyle(fontSize: 12, color: AppColors.muted),
+                      ),
+                      const SizedBox(height: 14),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isNarrow = constraints.maxWidth < 420;
+                          if (isNarrow) {
+                            return Column(
+                              children: [
+                                TextField(
+                                  controller: hbCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'HB (Hemoglobin)',
+                                    hintText: 'e.g. 11.5 g/dL',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: ureaCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Urea',
+                                    hintText: 'e.g. 24 mg/dL',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: plateletCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Platelet',
+                                    hintText: 'e.g. 250,000 /mcL',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: creatinineCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Creatinine',
+                                    hintText: 'e.g. 0.8 mg/dL',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                TextField(
+                                  controller: lftCtrl,
+                                  decoration: const InputDecoration(
+                                    labelText: 'LFT (Liver Function Test)',
+                                    hintText: 'e.g. AST 28, ALT 22, Bilirubin 0.7',
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                          return Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: hbCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'HB (Hemoglobin)',
+                                        hintText: 'e.g. 11.5 g/dL',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: ureaCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Urea',
+                                        hintText: 'e.g. 24 mg/dL',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: plateletCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Platelet',
+                                        hintText: 'e.g. 250,000 /mcL',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: creatinineCtrl,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Creatinine',
+                                        hintText: 'e.g. 0.8 mg/dL',
+                                        border: OutlineInputBorder(),
+                                        isDense: true,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: lftCtrl,
+                                decoration: const InputDecoration(
+                                  labelText: 'LFT (Liver Function Test)',
+                                  hintText: 'e.g. AST 28, ALT 22, Bilirubin 0.7',
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.crimson,
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                          ),
+                          onPressed: savingInvestigation ? null : _saveInvestigations,
+                          icon: savingInvestigation
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.save_outlined, size: 18),
+                          label: Text(
+                            savingInvestigation ? 'Saving...' : 'Save Investigations',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 18),
                 const Text('Referrals history', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
                 const SizedBox(height: 8),

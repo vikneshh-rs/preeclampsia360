@@ -165,6 +165,31 @@ def get_patient(patient_id: str, user: dict = Depends(current_user)):
     patient = assert_patient_access(db, user["sub"], patient_id, action="read")
     return patient
 
+@app.get("/api/v1/patients/{patient_id}/investigations")
+def get_patient_investigations(patient_id: str, user: dict = Depends(current_user)):
+    db = supabase_admin()
+    patient = assert_patient_access(db, user["sub"], patient_id, action="read")
+    
+    # Try dedicated table first
+    try:
+        rows = (
+            db.table("patient_investigations")
+            .select("*")
+            .eq("patient_id", patient_id)
+            .order("recorded_at", desc=True)
+            .execute()
+            .data
+            or []
+        )
+        if rows:
+            return {"items": rows, "latest": rows[0]}
+    except Exception:
+        pass
+    
+    # Fallback to questionnaire_data on patient record
+    inv = (patient.get("questionnaire_data") or {}).get("investigations") or {}
+    return {"items": [inv] if inv else [], "latest": inv if inv else None}
+
 @app.put("/api/v1/patients/{patient_id}")
 def update_patient(patient_id: str, payload: PatientUpdate, user: dict = Depends(current_user)):
     db = supabase_admin()
@@ -180,6 +205,24 @@ def update_patient(patient_id: str, payload: PatientUpdate, user: dict = Depends
         raise HTTPException(status_code=400, detail="Failed to update patient profile")
 
     updated = result.data[0]
+
+    # If investigations are present, also sync to dedicated patient_investigations table if migrated
+    inv = (payload.questionnaire_data or {}).get("investigations") if isinstance(payload.questionnaire_data, dict) else None
+    if inv and isinstance(inv, dict):
+        try:
+            db.table("patient_investigations").insert({
+                "patient_id": patient_id,
+                "facility_id": patient.get("facility_id"),
+                "hb": str(inv.get("hb") or ""),
+                "urea": str(inv.get("urea") or ""),
+                "platelet": str(inv.get("platelet") or ""),
+                "creatinine": str(inv.get("creatinine") or ""),
+                "lft": str(inv.get("lft") or ""),
+                "recorded_by": user["sub"],
+            }).execute()
+        except Exception:
+            pass  # Fallback if table migration 0008 has not yet been run
+
     db.table("audit_logs").insert({
         "actor_user_id": user["sub"],
         "facility_id": patient.get("facility_id"),

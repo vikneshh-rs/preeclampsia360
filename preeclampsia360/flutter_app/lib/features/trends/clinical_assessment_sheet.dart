@@ -78,6 +78,20 @@ class _ClinicalAssessmentSheetState extends State<ClinicalAssessmentSheet> {
       }
     }
 
+    // Pre-populate lab findings if investigations recorded
+    final inv = (widget.riskProfile['investigations'] as Map<String, dynamic>?) ?? {};
+    if (inv.isNotEmpty) {
+      final labParts = <String>[];
+      if (inv['hb'] != null && inv['hb'].toString().trim().isNotEmpty) labParts.add('HB: ${inv['hb']}');
+      if (inv['urea'] != null && inv['urea'].toString().trim().isNotEmpty) labParts.add('Urea: ${inv['urea']}');
+      if (inv['platelet'] != null && inv['platelet'].toString().trim().isNotEmpty) labParts.add('Platelet: ${inv['platelet']}');
+      if (inv['creatinine'] != null && inv['creatinine'].toString().trim().isNotEmpty) labParts.add('Creatinine: ${inv['creatinine']}');
+      if (inv['lft'] != null && inv['lft'].toString().trim().isNotEmpty) labParts.add('LFT: ${inv['lft']}');
+      if (labParts.isNotEmpty) {
+        labCtrl.text = labParts.join(' • ');
+      }
+    }
+
     // Set clinical impression default
     final screeningStatus = widget.screening['screening_status']?.toString();
     if (screeningStatus == 'severe_screening') {

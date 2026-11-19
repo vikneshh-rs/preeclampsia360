@@ -508,14 +508,23 @@ def get_risk_profile(
         })
 
     # 4. Previous Gestational Hypertension
-    has_ghtn = any(k in ob_comp_lower for k in ["gestational hypertension", "pregnancy-induced hypertension", "pregnancy induced hypertension", "g-htn"])
+    explicit_ghtn = str(med_hist.get("gestational_hypertension") or "").lower()
+    has_ghtn = (explicit_ghtn == "yes") or any(k in ob_comp_lower for k in ["gestational hypertension", "pregnancy-induced hypertension", "pregnancy induced hypertension", "g-htn"])
     if has_ghtn:
         factors.append({
             "factor_key": "previous_gestational_hypertension",
-            "name": "Previous Gestational Hypertension",
+            "name": "Gestational Hypertension",
             "status": "present",
-            "detail": "History of gestational hypertension documented in past pregnancy",
-            "source": "Past Obstetric Records",
+            "detail": "Documented gestational hypertension",
+            "source": "Medical & Obstetric History",
+        })
+    elif explicit_ghtn == "no":
+        factors.append({
+            "factor_key": "previous_gestational_hypertension",
+            "name": "Gestational Hypertension",
+            "status": "absent",
+            "detail": "Confirmed absent in Medical History",
+            "source": "Medical History",
         })
     elif parity is not None and str(parity).isdigit() and int(parity) == 0:
         factors.append({
@@ -543,14 +552,23 @@ def get_risk_profile(
         })
 
     # 5. Chronic Hypertension
-    med_text = str(med_hist.get("past_medical_history") or "").lower()
-    has_chronic_htn = any(k in med_text for k in ["htn", "hypertension", "chronic high bp", "high blood pressure"])
+    explicit_chn = str(med_hist.get("chronic_hypertension") or "").lower()
+    med_text = (str(med_hist.get("past_medical_history") or "") + " " + str(med_hist.get("other_comorbidities") or "")).lower()
+    has_chronic_htn = (explicit_chn == "yes") or any(k in med_text for k in ["htn", "hypertension", "chronic high bp", "high blood pressure"])
     if has_chronic_htn:
         factors.append({
             "factor_key": "chronic_hypertension",
             "name": "Chronic (Pre-existing) Hypertension",
             "status": "present",
             "detail": "Documented pre-existing hypertension",
+            "source": "Medical History",
+        })
+    elif explicit_chn == "no":
+        factors.append({
+            "factor_key": "chronic_hypertension",
+            "name": "Chronic Hypertension",
+            "status": "absent",
+            "detail": "Confirmed absent in Medical History",
             "source": "Medical History",
         })
     elif med_text.strip() and med_text.strip() not in ["", "none", "nil"]:
@@ -655,23 +673,24 @@ def get_risk_profile(
         })
 
     # 9. Multiple Pregnancy (Twins / Multiples)
+    explicit_mult = str(med_hist.get("multiple_pregnancy") or "").lower()
     t2_scan = str(qd.get("trimester_2", {}).get("anomaly_scan_remarks") or "").lower()
-    has_multiple = any(k in t2_scan for k in ["twin", "triplet", "multiple gestation", "multiple pregnancy"])
+    has_multiple = (explicit_mult == "yes") or any(k in t2_scan for k in ["twin", "triplet", "multiple gestation", "multiple pregnancy"])
     if has_multiple:
         factors.append({
             "factor_key": "multiple_pregnancy",
             "name": "Multiple Pregnancy (Twins / Multiples)",
             "status": "present",
-            "detail": "Documented multiple gestation on ultrasound / exam",
-            "source": "Antenatal & Ultrasound Records",
+            "detail": "Documented multiple gestation",
+            "source": "Medical & Ultrasound Records",
         })
     else:
         factors.append({
             "factor_key": "multiple_pregnancy",
             "name": "Multiple Pregnancy",
             "status": "absent",
-            "detail": "Singleton pregnancy confirmed / standard presentation",
-            "source": "Antenatal Examination",
+            "detail": "Singleton pregnancy confirmed",
+            "source": "Medical History",
         })
 
     # 10. Family History of Preeclampsia
@@ -744,6 +763,7 @@ def get_risk_profile(
         "unknown_count": unknown_cnt,
         "summary_headline": f"{present_cnt} documented risk factors" if present_cnt > 0 else "No high-risk factors documented",
         "factors": factors,
+        "investigations": qd.get("investigations") or {},
     }
 
 
