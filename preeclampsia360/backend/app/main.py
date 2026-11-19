@@ -146,7 +146,7 @@ def list_patients(
     # PostgREST in_ filter
     query = (
         db.table("patients")
-        .select("id,patient_code,full_name,date_of_birth,phone,created_at,facility_id,blood_group")
+        .select("id,patient_code,full_name,date_of_birth,phone,created_at,facility_id,blood_group,questionnaire_data")
         .in_("facility_id", target_fids)
         .order("created_at", desc=True)
         .limit(limit)
@@ -156,7 +156,117 @@ def list_patients(
         query = query.ilike("full_name", f"%{q}%")
 
     rows = query.execute().data or []
+
+    # Calculate 2-week Antenatal Visit due status (Every patient must be checked every 2 weeks)
+    if rows:
+        p_ids = [r["id"] for r in rows]
+        try:
+            recent_bps = (
+                db.table("bp_measurements")
+                .select("patient_id,measured_at,systolic_mmhg,diastolic_mmhg")
+                .in_("patient_id", p_ids)
+                .order("measured_at", desc=True)
+                .execute()
+                .data or []
+            )
+            latest_bp_map = {}
+            for bp in recent_bps:
+                pid = bp["patient_id"]
+                if pid not in latest_bp_map:
+                    latest_bp_map[pid] = bp
+
+            now_utc = datetime.now(timezone.utc)
+            for r in rows:
+                latest = latest_bp_map.get(r["id"])
+                if latest:
+                    r["last_visit_at"] = latest["measured_at"]
+                    r["latest_bp"] = f"{latest['systolic_mmhg']}/{latest['diastolic_mmhg']}"
+                    try:
+                        m_dt = datetime.fromisoformat(latest["measured_at"].replace("Z", "+00:00"))
+                        days = (now_utc - m_dt).days
+                    except Exception:
+                        days = 0
+                else:
+                    r["last_visit_at"] = r.get("created_at")
+                    r["latest_bp"] = None
+                    try:
+                        c_dt = datetime.fromisoformat(r["created_at"].replace("Z", "+00:00"))
+                        days = (now_utc - c_dt).days
+                    except Exception:
+                        days = 14
+                r["days_since_last_visit"] = days
+                r["anc_due_2_weeks"] = days >= 14
+        except Exception:
+            pass
+
     return {"items": rows}
+
+@app.get("/api/v1/anm/due-visits")
+def get_anm_due_visits(user: dict = Depends(current_user)):
+    """
+    Returns patients assigned to ANM/facility who are due or overdue
+    for their mandatory 2-week routine antenatal visit / BP check.
+    """
+    db = supabase_admin()
+    accessible_fids = get_accessible_facility_ids(db, user["sub"])
+    if not accessible_fids:
+        return {"items": [], "total_due": 0}
+
+    patients = (
+        db.table("patients")
+        .select("id,patient_code,full_name,date_of_birth,phone,created_at,facility_id,blood_group,questionnaire_data")
+        .in_("facility_id", list(accessible_fids))
+        .order("created_at", desc=True)
+        .execute()
+        .data or []
+    )
+    if not patients:
+        return {"items": [], "total_due": 0}
+
+    p_ids = [p["id"] for p in patients]
+    latest_bp_map = {}
+    try:
+        recent_bps = (
+            db.table("bp_measurements")
+            .select("patient_id,measured_at,systolic_mmhg,diastolic_mmhg")
+            .in_("patient_id", p_ids)
+            .order("measured_at", desc=True)
+            .execute()
+            .data or []
+        )
+        for bp in recent_bps:
+            pid = bp["patient_id"]
+            if pid not in latest_bp_map:
+                latest_bp_map[pid] = bp
+    except Exception:
+        pass
+
+    now_utc = datetime.now(timezone.utc)
+    due_list = []
+    for p in patients:
+        latest = latest_bp_map.get(p["id"])
+        if latest:
+            p["last_visit_at"] = latest["measured_at"]
+            p["latest_bp"] = f"{latest['systolic_mmhg']}/{latest['diastolic_mmhg']}"
+            try:
+                m_dt = datetime.fromisoformat(latest["measured_at"].replace("Z", "+00:00"))
+                days = (now_utc - m_dt).days
+            except Exception:
+                days = 0
+        else:
+            p["last_visit_at"] = p.get("created_at")
+            p["latest_bp"] = None
+            try:
+                c_dt = datetime.fromisoformat(p["created_at"].replace("Z", "+00:00"))
+                days = (now_utc - c_dt).days
+            except Exception:
+                days = 14
+        p["days_since_last_visit"] = days
+        p["anc_due_2_weeks"] = days >= 14
+        if p["anc_due_2_weeks"]:
+            due_list.append(p)
+
+    return {"items": due_list, "total_due": len(due_list)}
 
 @app.get("/api/v1/patients/{patient_id}")
 def get_patient(patient_id: str, user: dict = Depends(current_user)):
@@ -499,6 +609,21 @@ def review_clinical_alert(
     }
     res = db.table("clinical_alerts").update(update_row).eq("id", alert_id).execute()
     updated = res.data[0] if res.data else {**alert, **update_row}
+
+    # When alert is acknowledged/reviewed, tag patient for active surveillance tracking
+    try:
+        pat_res = db.table("patients").select("id,questionnaire_data").eq("id", alert["patient_id"]).maybe_single().execute().data
+        if pat_res:
+            qd = pat_res.get("questionnaire_data") or {}
+            qd["is_tracked"] = True
+            qd["tracking_status"] = "active_surveillance"
+            qd["tracked_at"] = datetime.now(timezone.utc).isoformat()
+            qd["tracking_reason"] = f"Yellow Alert Acknowledged: {alert.get('trigger_reason', 'Elevated BP')}"
+            qd["last_alert_severity"] = alert.get("severity", "amber")
+            qd["last_alert_bp"] = f"{alert.get('systolic_mmhg')}/{alert.get('diastolic_mmhg')}"
+            db.table("patients").update({"questionnaire_data": qd}).eq("id", alert["patient_id"]).execute()
+    except Exception:
+        pass
 
     db.table("audit_logs").insert({
         "actor_user_id": user["sub"],

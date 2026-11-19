@@ -7,7 +7,8 @@ import '../clinical/bp_entry_screen.dart';
 import '../trends/bp_trends_tab.dart';
 
 class PatientListScreen extends StatefulWidget {
-  const PatientListScreen({super.key});
+  final String? initialTab;
+  const PatientListScreen({super.key, this.initialTab});
   @override
   State<PatientListScreen> createState() => _PatientListScreenState();
 }
@@ -17,10 +18,12 @@ class _PatientListScreenState extends State<PatientListScreen> {
   List<dynamic> items = [];
   bool loading = true;
   String? error;
+  late String filterTab;
 
   @override
   void initState() {
     super.initState();
+    filterTab = widget.initialTab ?? 'all';
     load();
   }
 
@@ -87,6 +90,47 @@ class _PatientListScreenState extends State<PatientListScreen> {
                 ),
               ),
             ),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: [
+                  ChoiceChip(
+                    label: Text('All Patients (${items.length})'),
+                    selected: filterTab == 'all',
+                    onSelected: (_) => setState(() => filterTab = 'all'),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.radar, size: 16, color: Color(0xFFD97706)),
+                    label: Text(
+                      'Track Patients (${items.where((x) => (x['questionnaire_data'] is Map && (x['questionnaire_data'] as Map)['is_tracked'] == true)).length})',
+                      style: TextStyle(
+                        fontWeight: filterTab == 'tracked' ? FontWeight.bold : FontWeight.normal,
+                        color: filterTab == 'tracked' ? const Color(0xFF92400E) : AppColors.ink,
+                      ),
+                    ),
+                    selected: filterTab == 'tracked',
+                    selectedColor: const Color(0xFFFEF3C7),
+                    onSelected: (_) => setState(() => filterTab = 'tracked'),
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    avatar: const Icon(Icons.event_repeat, size: 16, color: AppColors.crimson),
+                    label: Text(
+                      '2-Wk Due (${items.where((x) => x['anc_due_2_weeks'] == true || (x['days_since_last_visit'] is num && x['days_since_last_visit'] >= 14)).length})',
+                      style: TextStyle(
+                        fontWeight: filterTab == 'due' ? FontWeight.bold : FontWeight.normal,
+                        color: filterTab == 'due' ? AppColors.crimson : AppColors.ink,
+                      ),
+                    ),
+                    selected: filterTab == 'due',
+                    selectedColor: const Color(0xFFFFF1F2),
+                    onSelected: (_) => setState(() => filterTab = 'due'),
+                  ),
+                ],
+              ),
+            ),
             Expanded(
               child: loading
                   ? const LoadingView()
@@ -104,38 +148,143 @@ class _PatientListScreenState extends State<PatientListScreen> {
                             ),
                           ),
                         )
-                      : items.isEmpty
-                          ? const Center(child: Text('No patient records found.'))
-                          : RefreshIndicator(
-                              onRefresh: load,
-                              child: ListView.separated(
-                                padding: const EdgeInsets.all(16),
-                                itemCount: items.length,
-                                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                                itemBuilder: (context, i) {
-                                  final p = items[i];
-                                  return Card(
-                                    child: ListTile(
-                                      onTap: () => Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (_) => PatientDetailScreen(patientId: p['id']),
-                                        ),
-                                      ).then((_) => load()),
-                                      leading: CircleAvatar(
-                                        backgroundColor: AppColors.paleRose,
-                                        child: Text(
-                                          p['full_name'][0].toUpperCase(),
-                                          style: const TextStyle(color: AppColors.crimson, fontWeight: FontWeight.bold),
+                      : () {
+                          final displayedItems = filterTab == 'tracked'
+                              ? items.where((x) {
+                                  final q = x['questionnaire_data'] is Map ? x['questionnaire_data'] as Map : {};
+                                  return q['is_tracked'] == true;
+                                }).toList()
+                              : filterTab == 'due'
+                                  ? items.where((x) {
+                                      return x['anc_due_2_weeks'] == true ||
+                                          (x['days_since_last_visit'] is num && x['days_since_last_visit'] >= 14);
+                                    }).toList()
+                                  : items;
+
+                          if (displayedItems.isEmpty) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      filterTab == 'tracked'
+                                          ? Icons.radar
+                                          : filterTab == 'due'
+                                              ? Icons.check_circle_outline
+                                              : Icons.people_outline,
+                                      size: 44,
+                                      color: filterTab == 'tracked'
+                                          ? const Color(0xFFD97706)
+                                          : filterTab == 'due'
+                                              ? AppColors.success
+                                              : AppColors.muted,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      filterTab == 'tracked'
+                                          ? 'No patients currently in Track Patients list'
+                                          : filterTab == 'due'
+                                              ? 'All mothers are up-to-date with routine 2-week visits!'
+                                              : 'No patient records found.',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                    ),
+                                    if (filterTab == 'tracked') ...[
+                                      const SizedBox(height: 4),
+                                      const Text(
+                                        'Yellow alert patients acknowledged at PHC will appear here for active surveillance.',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(fontSize: 12, color: AppColors.muted),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          return RefreshIndicator(
+                            onRefresh: load,
+                            child: ListView.separated(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: displayedItems.length,
+                              separatorBuilder: (_, __) => const SizedBox(height: 10),
+                              itemBuilder: (context, i) {
+                                final p = displayedItems[i];
+                                final isTracked = p['questionnaire_data'] is Map && (p['questionnaire_data'] as Map)['is_tracked'] == true;
+                                final isDue = p['anc_due_2_weeks'] == true ||
+                                    (p['days_since_last_visit'] is num && p['days_since_last_visit'] >= 14);
+                                final days = p['days_since_last_visit'] ?? 14;
+
+                                return Card(
+                                  child: ListTile(
+                                    onTap: () => Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => PatientDetailScreen(patientId: p['id']),
+                                      ),
+                                    ).then((_) => load()),
+                                    leading: CircleAvatar(
+                                      backgroundColor: isTracked
+                                          ? const Color(0xFFFEF3C7)
+                                          : isDue
+                                              ? const Color(0xFFFFF1F2)
+                                              : AppColors.paleRose,
+                                      child: Text(
+                                        p['full_name'][0].toUpperCase(),
+                                        style: TextStyle(
+                                          color: isTracked
+                                              ? const Color(0xFFD97706)
+                                              : isDue
+                                                  ? AppColors.crimson
+                                                  : AppColors.crimson,
+                                          fontWeight: FontWeight.bold,
                                         ),
                                       ),
-                                      title: Text(p['full_name'], style: const TextStyle(fontWeight: FontWeight.w700)),
-                                      subtitle: Text('${p['patient_code']} • Blood: ${p['blood_group'] ?? '—'} • ${p['phone'] ?? 'No phone'}'),
-                                      trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
                                     ),
-                                  );
-                                },
-                              ),
+                                    title: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(p['full_name'], style: const TextStyle(fontWeight: FontWeight.w700)),
+                                        ),
+                                        if (isDue) ...[
+                                          Container(
+                                            margin: const EdgeInsets.only(right: 6),
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFFF1F2),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: const Color(0xFFFECDD3)),
+                                            ),
+                                            child: Text(
+                                              '2-WK DUE (${days}d)',
+                                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: AppColors.crimson),
+                                            ),
+                                          ),
+                                        ],
+                                        if (isTracked)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFEF3C7),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: const Color(0xFFFDE68A)),
+                                            ),
+                                            child: const Text(
+                                              'TRACKED',
+                                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    subtitle: Text('${p['patient_code']} • Blood: ${p['blood_group'] ?? '—'} • ${p['phone'] ?? 'No phone'}'),
+                                    trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
+                                  ),
+                                );
+                              },
                             ),
+                          );
+                        }(),
             ),
           ],
         ),

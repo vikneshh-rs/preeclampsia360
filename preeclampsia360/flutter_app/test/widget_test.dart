@@ -5,6 +5,7 @@ import 'package:preeclampsia360/features/auth/login_screen.dart';
 import 'package:preeclampsia360/features/clinical/bp_entry_screen.dart';
 import 'package:preeclampsia360/features/patients/patient_registration_screen.dart';
 import 'package:preeclampsia360/features/referrals/referral_screen.dart';
+import 'package:preeclampsia360/features/referrals/stabilize_patient_dialog.dart';
 import 'package:preeclampsia360/features/trends/bp_trend_graph.dart';
 import 'package:preeclampsia360/features/trends/bp_overview_card.dart';
 import 'package:preeclampsia360/features/trends/trend_insights_view.dart';
@@ -183,5 +184,30 @@ void main() {
     await tester.pump();
     expect(find.text('Maternal Risk Profile'), findsOneWidget);
     expect(find.text('2 documented risk factors'), findsOneWidget);
+  });
+
+  testWidgets('7. Stabilize the Patient dialog with emergency medicines and referral initiation', (WidgetTester tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: Scaffold(
+        body: StabilizePatientDialog(
+          patientId: 'p-test-1',
+          patientName: 'Ananya Sharma',
+          patientCode: 'PE360-TEST01',
+          systolic: 168,
+          diastolic: 118,
+        ),
+      ),
+    ));
+    await tester.pump();
+
+    expect(find.text('Stabilize the Patient'), findsOneWidget);
+    expect(find.text('RED ALERT'), findsOneWidget);
+    expect(find.text('Tab Labetalol 100 mg'), findsOneWidget);
+    expect(find.text('Tab Nifidipine 10 mg'), findsOneWidget);
+    expect(find.text('IV MgSO4 4g iv'), findsOneWidget);
+    expect(find.text('IV Lasix'), findsOneWidget);
+    expect(find.text('Betamethasone 12mg'), findsOneWidget);
+    expect(find.text('Dexamethasone 12mg'), findsOneWidget);
+    expect(find.text('Print Referral Sheet'), findsOneWidget);
   });
 }

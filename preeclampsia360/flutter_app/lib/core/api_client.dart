@@ -25,6 +25,7 @@ class ApiClient {
   String get baseUrl => _baseUrl;
   bool get isAuthenticated => _token != null;
   String? get activeFacilityId => _activeFacilityId ?? (assignments.isNotEmpty ? assignments.first['facility_id']?.toString() : null);
+  String? get activeFacilityName => activeAssignment?['facilities']?['name']?.toString();
 
   Map<String, dynamic>? get activeAssignment {
     if (assignments.isEmpty) return null;
