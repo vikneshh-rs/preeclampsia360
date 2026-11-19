@@ -58,6 +58,19 @@ def seed():
 
     phc_id = code_to_id["PY-PHC-01"]
 
+    # Seed Tertiary Maternity Hospitals for Referral Network
+    tertiary_hospitals = [
+        {"name": "JIPMER (Jawaharlal Institute of Postgraduate Medical Education & Research)", "facility_type": "HOSPITAL", "facility_code": "PY-HOSP-JIPMER", "district_id": "PUDUCHERRY", "address": "Gorimedu, Puducherry"},
+        {"name": "IGMC&RI (Indira Gandhi Medical College & Research Institute)", "facility_type": "HOSPITAL", "facility_code": "PY-HOSP-IGMCRI", "district_id": "PUDUCHERRY", "address": "Kathirkamam, Puducherry"},
+        {"name": "PIMS (Pondicherry Institute of Medical Sciences)", "facility_type": "HOSPITAL", "facility_code": "PY-HOSP-PIMS", "district_id": "PUDUCHERRY", "address": "Kalapet, East Coast Road (ECR), Puducherry"},
+        {"name": "SMVMCH (Sri Manakula Vinayagar Medical College and Hospital)", "facility_type": "HOSPITAL", "facility_code": "PY-HOSP-SMVMCH", "district_id": "PUDUCHERRY", "address": "Madagadipet, Puducherry"},
+    ]
+    for hosp in tertiary_hospitals:
+        if hosp["facility_code"] not in code_to_id:
+            h_row = client.table("facilities").insert({**hosp, "is_active": True}).execute().data[0]
+            code_to_id[hosp["facility_code"]] = h_row["id"]
+            print("Created Hospital:", h_row["name"])
+
     # 2. Seed Users
     users_to_seed = [
         {

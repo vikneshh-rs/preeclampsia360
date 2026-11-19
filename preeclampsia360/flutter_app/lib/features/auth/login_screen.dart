@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../dashboard/app_shell.dart';
@@ -206,10 +207,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextField(
                     controller: id,
                     textCapitalization: TextCapitalization.characters,
+                    inputFormatters: [HealthcareWorkerIdInputFormatter()],
                     decoration: const InputDecoration(
                       labelText: 'Healthcare Worker ID',
                       prefixIcon: Icon(Icons.badge_outlined),
-                      hintText: 'PY-PHC-ANM-MUTHIALPET',
+                      hintText: 'e.g. PY-PHC-ANM-MUTH or PY-PHC-MUTH',
+                      helperText: 'Hyphens (-) auto-fill as you type your PHC or ANM area code',
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -252,6 +255,98 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Automatically auto-fills hyphens ("-") as healthcare workers type their ID.
+/// Example formats handled:
+///   - PY-PHC-MUTH       (PHC Medical Officer)
+///   - PY-PHC-ANM-MUTH   (Auxiliary Nurse Midwife)
+///   - PY-THC-MO-001     (Tertiary Hospital MO)
+///   - PY-SYS-ADMIN-001  (System Administrator)
+class HealthcareWorkerIdInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    // If the user is deleting, allow free deletion without force-inserting hyphens
+    if (newValue.text.length < oldValue.text.length) {
+      return newValue.copyWith(text: newValue.text.toUpperCase());
+    }
+
+    final raw = newValue.text.toUpperCase();
+    final clean = raw.replaceAll(RegExp(r'[^A-Z0-9]'), '');
+    if (clean.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    final buffer = StringBuffer();
+
+    if (clean.startsWith('PY')) {
+      buffer.write('PY');
+      if (clean.length > 2) {
+        buffer.write('-');
+        final rem1 = clean.substring(2);
+
+        // Facility level check: PHC, THC, CHC, SYS, HOSP
+        if (rem1.startsWith('PHC')) {
+          buffer.write('PHC');
+          if (rem1.length > 3) {
+            buffer.write('-');
+            final rem2 = rem1.substring(3);
+
+            // Role check: ANM, ASHA, MO, or direct area code (e.g. MUTH)
+            if (rem2.startsWith('ANM')) {
+              buffer.write('ANM');
+              if (rem2.length > 3) {
+                buffer.write('-');
+                final rem3 = rem2.substring(3);
+                // Area code up to 4 characters
+                buffer.write(rem3.length > 4 ? rem3.substring(0, 4) : rem3);
+              }
+            } else if (rem2.startsWith('ASHA')) {
+              buffer.write('ASHA');
+              if (rem2.length > 4) {
+                buffer.write('-');
+                final rem3 = rem2.substring(4);
+                buffer.write(rem3.length > 4 ? rem3.substring(0, 4) : rem3);
+              }
+            } else if (rem2.startsWith('MO')) {
+              buffer.write('MO');
+              if (rem2.length > 2) {
+                buffer.write('-');
+                final rem3 = rem2.substring(2);
+                buffer.write(rem3.length > 4 ? rem3.substring(0, 4) : rem3);
+              }
+            } else {
+              // Direct area code after PHC (e.g. PY-PHC-MUTH)
+              buffer.write(rem2.length > 4 ? rem2.substring(0, 4) : rem2);
+            }
+          }
+        } else if (rem1.startsWith('THC') || rem1.startsWith('CHC') || rem1.startsWith('SYS') || rem1.startsWith('HOSP')) {
+          final prefixLen = rem1.startsWith('HOSP') ? 4 : 3;
+          buffer.write(rem1.substring(0, prefixLen));
+          if (rem1.length > prefixLen) {
+            buffer.write('-');
+            buffer.write(rem1.substring(prefixLen));
+          }
+        } else {
+          buffer.write(rem1);
+        }
+      } else {
+        // Just 'PY' typed, auto-fill trailing hyphen
+        buffer.write('-');
+      }
+    } else {
+      buffer.write(clean);
+    }
+
+    final result = buffer.toString();
+    return TextEditingValue(
+      text: result,
+      selection: TextSelection.collapsed(offset: result.length),
     );
   }
 }

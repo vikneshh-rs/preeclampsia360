@@ -7,6 +7,7 @@ import '../auth/login_screen.dart';
 import '../referrals/referral_screen.dart';
 import '../referrals/stabilize_patient_dialog.dart';
 import '../clinical/bp_entry_screen.dart';
+import 'thc_web_dashboard.dart';
 import '../../shared/ui.dart';
 
 class AppShell extends StatefulWidget {
@@ -71,8 +72,20 @@ class _AppShellState extends State<AppShell> {
     return '$r ($facilityName)'.replaceAll('_', ' ');
   }
 
+  bool get isThcUser {
+    final a = ApiClient.instance.assignments;
+    final active = ApiClient.instance.activeAssignment ?? (a.isNotEmpty ? a.first : null);
+    final role = active?['role']?.toString() ?? '';
+    final fac = active?['facilities'] is Map ? active!['facilities'] as Map : null;
+    final fType = fac?['facility_type']?.toString() ?? '';
+    return role.contains('THC') || role.contains('HOSPITAL') || fType == 'THC' || fType == 'HOSPITAL';
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (!loading && error == null && isThcUser) {
+      return THCWebDashboardView(onLogout: logout);
+    }
     final user = ApiClient.instance.currentUser ?? {};
     return Scaffold(
       appBar: AppBar(

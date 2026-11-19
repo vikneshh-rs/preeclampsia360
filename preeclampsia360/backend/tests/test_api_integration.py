@@ -669,7 +669,53 @@ class TestPreeclampsia360BackendIntegration(unittest.TestCase):
         self.assertIn("registered_patients", metrics)
         self.assertIn("active_alerts", metrics)
 
+    @patch("app.main.supabase_admin")
+    def test_gestational_age_dynamic_update_from_registration(self, mock_db_getter):
+        """
+        Verifies that Gestational Age recorded at patient registration
+        dynamically updates over time from the date of registration.
+        """
+        from app.main import calculate_current_gestational_age
 
+        # Baseline: Registered 10 days ago at 24 weeks 3 days
+        ten_days_ago = (datetime.now(timezone.utc) - timedelta(days=10)).date().isoformat()
+        patient_record = {
+            "id": str(uuid.uuid4()),
+            "full_name": "Kavitha Raj",
+            "created_at": f"{ten_days_ago}T08:00:00Z",
+            "questionnaire_data": {
+                "ga_weeks_at_registration": 24,
+                "ga_days_at_registration": 3,
+                "registration_date": ten_days_ago,
+            },
+        }
+
+        # Calculate current GA dynamically
+        ga = calculate_current_gestational_age(patient_record)
+        # 24 weeks 3 days + 10 days = 24 weeks + 13 days = 25 weeks 6 days
+        self.assertEqual(ga["gestational_age_weeks"], 25)
+        self.assertEqual(ga["gestational_age_days"], 6)
+        self.assertEqual(ga["current_gestational_age"], "25 weeks 6 days")
+        self.assertEqual(ga["ga_at_registration"], "24w 3d")
+        self.assertEqual(ga["days_since_registration"], 10)
+
+        # Baseline 2: 4 weeks (28 days) later
+        four_weeks_ago = (datetime.now(timezone.utc) - timedelta(days=28)).date().isoformat()
+        patient_record_2 = {
+            "id": str(uuid.uuid4()),
+            "full_name": "Meera S",
+            "created_at": f"{four_weeks_ago}T08:00:00Z",
+            "questionnaire_data": {
+                "ga_weeks_at_registration": 20,
+                "ga_days_at_registration": 0,
+                "registration_date": four_weeks_ago,
+            },
+        }
+        ga_2 = calculate_current_gestational_age(patient_record_2)
+        # 20 weeks 0 days + 28 days = 24 weeks 0 days
+        self.assertEqual(ga_2["gestational_age_weeks"], 24)
+        self.assertEqual(ga_2["gestational_age_days"], 0)
+        self.assertEqual(ga_2["current_gestational_age"], "24 weeks 0 days")
 
 if __name__ == "__main__":
     unittest.main()

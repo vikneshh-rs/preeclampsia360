@@ -57,6 +57,11 @@ def get_accessible_facility_ids(db: Client, user_id: str) -> set[str]:
             for target_id in fac_map.keys():
                 if is_descendant(fac_map, fid, target_id):
                     accessible.add(target_id)
+            # Tertiary hospitals (THC / Referral Hospitals) supervise & monitor all regional PHCs & CHCs
+            if role in ("THC_ADMIN", "THC_MO") or fac_map.get(fid, {}).get("facility_type") in ("THC", "HOSPITAL"):
+                for target_id, fac in fac_map.items():
+                    if fac.get("facility_type") in ("PHC", "CHC"):
+                        accessible.add(target_id)
 
     return accessible
 

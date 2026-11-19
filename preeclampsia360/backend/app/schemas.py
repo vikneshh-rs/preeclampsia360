@@ -18,6 +18,8 @@ class PatientCreate(BaseModel):
     parity: Optional[int] = Field(default=None, ge=0, le=30)
     abortions: Optional[int] = Field(default=None, ge=0, le=30)
     living_children: Optional[int] = Field(default=None, ge=0, le=30)
+    gestational_age_weeks: Optional[int] = Field(default=None, ge=0, le=42)
+    gestational_age_days: Optional[int] = Field(default=None, ge=0, le=7)
     questionnaire: dict = Field(default_factory=dict)
 
 class PatientOut(BaseModel):
@@ -39,6 +41,8 @@ class PatientUpdate(BaseModel):
     parity: Optional[int] = Field(default=None, ge=0, le=30)
     abortions: Optional[int] = Field(default=None, ge=0, le=30)
     living_children: Optional[int] = Field(default=None, ge=0, le=30)
+    gestational_age_weeks: Optional[int] = Field(default=None, ge=0, le=42)
+    gestational_age_days: Optional[int] = Field(default=None, ge=0, le=7)
     questionnaire_data: Optional[dict] = None
 
 class ObstetricHistoryCreate(BaseModel):

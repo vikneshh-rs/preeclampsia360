@@ -7,6 +7,7 @@ import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../../shared/ui.dart';
 import '../trends/bp_trend_graph.dart';
+import 'nearby_hospitals_map_screen.dart';
 
 class ReferralSheetScreen extends StatefulWidget {
   final String patientId;
@@ -453,6 +454,23 @@ class _ReferralSheetScreenState extends State<ReferralSheetScreen> {
     );
   }
 
+  void _navigateToHospitalsMap() {
+    final refId = widget.referralData?['id']?.toString();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NearbyHospitalsMapScreen(
+          patientId: widget.patientId,
+          patientName: widget.patientName,
+          patientCode: widget.patientCode,
+          selectedMedicines: widget.selectedMedicines,
+          existingReferralId: refId,
+          notes: widget.notes,
+          referralData: widget.referralData,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = patient ?? {};
@@ -476,6 +494,13 @@ class _ReferralSheetScreenState extends State<ReferralSheetScreen> {
             icon: const Icon(Icons.print_outlined),
             onPressed: loading ? null : _previewPdf,
           ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: const Color(0xFF0284C7)),
+            onPressed: loading ? null : _navigateToHospitalsMap,
+            icon: const Icon(Icons.map_outlined, size: 16),
+            label: const Text('Hospital Map', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          ),
+          const SizedBox(width: 8),
           FilledButton.icon(
             style: FilledButton.styleFrom(backgroundColor: const Color(0xFF991B1B)),
             onPressed: loading ? null : _downloadPdf,
@@ -515,35 +540,65 @@ class _ReferralSheetScreenState extends State<ReferralSheetScreen> {
                         ),
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          const Icon(Icons.emergency_share, color: Colors.white, size: 32),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'PRE-REFERRAL EMERGENCY STABILIZATION SHEET',
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                          Row(
+                            children: [
+                              const Icon(Icons.emergency_share, color: Colors.white, size: 32),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'PRE-REFERRAL EMERGENCY STABILIZATION SHEET',
+                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Target: ${widget.receivingFacilityName}',
+                                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Referring to: ${widget.receivingFacilityName}',
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white24,
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                              ],
-                            ),
+                                child: const Text(
+                                  'RED ALERT',
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11),
+                                ),
+                              ),
+                            ],
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white24,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Text(
-                              'RED ALERT',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11),
+                          const SizedBox(height: 10),
+                          InkWell(
+                            onTap: _navigateToHospitalsMap,
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.map_rounded, size: 18, color: Color(0xFF991B1B)),
+                                  SizedBox(width: 8),
+                                  Text(
+                                    'View Nearby Maternity Hospitals Map (Puducherry)',
+                                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF991B1B)),
+                                  ),
+                                  SizedBox(width: 6),
+                                  Icon(Icons.arrow_forward_ios, size: 12, color: Color(0xFF991B1B)),
+                                ],
+                              ),
                             ),
                           ),
                         ],
@@ -776,6 +831,74 @@ class _ReferralSheetScreenState extends State<ReferralSheetScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
+
+                    // Nearby Maternity Care Hospitals Map Navigation Card
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFEFF6FF), Color(0xFFDBEAFE)],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0284C7),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(Icons.map_rounded, color: Colors.white, size: 24),
+                              ),
+                              const SizedBox(width: 12),
+                              const Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Nearby Maternity Care Hospitals (Puducherry Map)',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF0C4A6E)),
+                                    ),
+                                    Text(
+                                      'JIPMER, IGMC&RI, PIMS, RGGWCH, SMVMCH',
+                                      style: TextStyle(fontSize: 11, color: Color(0xFF0369A1), fontWeight: FontWeight.w600),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'View hospital locations on an interactive Puducherry map. Tap any hospital pin or name to assign this patient and dispatch this referral sheet directly to the receiving facility.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF1E293B)),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFF0284C7),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: _navigateToHospitalsMap,
+                              icon: const Icon(Icons.pin_drop_rounded, size: 18),
+                              label: const Text(
+                                'Open Puducherry Map & Route Referral',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
 
                     // Download / Print Action Card at bottom
                     Container(

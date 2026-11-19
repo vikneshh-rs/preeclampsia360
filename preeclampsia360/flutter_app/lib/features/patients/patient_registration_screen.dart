@@ -20,6 +20,8 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
   final phone = TextEditingController();
   final address = TextEditingController();
   final blood = TextEditingController();
+  final gaWeeks = TextEditingController();
+  final gaDays = TextEditingController();
   final lmp = TextEditingController();
   final edd = TextEditingController();
   final gravida = TextEditingController();
@@ -55,6 +57,8 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
     phone.dispose();
     address.dispose();
     blood.dispose();
+    gaWeeks.dispose();
+    gaDays.dispose();
     lmp.dispose();
     edd.dispose();
     gravida.dispose();
@@ -80,6 +84,42 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
   }
 
   int? _int(String v) => int.tryParse(v.trim());
+
+  String _formatDate(DateTime dt) {
+    return '${dt.year.toString().padLeft(4, '0')}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  }
+
+  void _onGaChanged() {
+    final w = int.tryParse(gaWeeks.text.trim());
+    final d = int.tryParse(gaDays.text.trim()) ?? 0;
+    if (w != null && w >= 0 && w <= 42 && d >= 0 && d <= 7) {
+      final totalDays = (w * 7) + d;
+      final estLmp = DateTime.now().subtract(Duration(days: totalDays));
+      final estEdd = estLmp.add(const Duration(days: 280));
+      lmp.text = _formatDate(estLmp);
+      edd.text = _formatDate(estEdd);
+    }
+  }
+
+  void _onLmpChanged(String val) {
+    final lmpStr = val.trim();
+    if (lmpStr.length == 10) {
+      final parsed = DateTime.tryParse(lmpStr);
+      if (parsed != null) {
+        final diff = DateTime.now().difference(parsed).inDays;
+        if (diff >= 0 && diff <= 300) {
+          final w = diff ~/ 7;
+          final d = diff % 7;
+          if (w <= 42) {
+            gaWeeks.text = w.toString();
+            gaDays.text = d.toString();
+          }
+          final estEdd = parsed.add(const Duration(days: 280));
+          edd.text = _formatDate(estEdd);
+        }
+      }
+    }
+  }
 
   Future<void> save() async {
     if (!form.currentState!.validate()) return;
@@ -109,6 +149,11 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
           'parity': _int(parity.text),
           'abortions': _int(abortions.text),
           'living_children': _int(living.text),
+          'gestational_age_weeks': _int(gaWeeks.text),
+          'gestational_age_days': _int(gaDays.text),
+          'ga_weeks_at_registration': _int(gaWeeks.text),
+          'ga_days_at_registration': _int(gaDays.text),
+          'registration_date': DateTime.now().toUtc().toIso8601String(),
           'past_obstetric_history': pastOb.text.trim(),
           'delivery_details': delivery.text.trim(),
           'baby_details': baby.text.trim(),
@@ -134,6 +179,9 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
         },
       };
 
+      final gaWeeksVal = _int(gaWeeks.text);
+      final gaDaysVal = _int(gaDays.text);
+
       final payload = {
         'full_name': name.text.trim(),
         'date_of_birth': null,
@@ -146,8 +194,20 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
         'parity': _int(parity.text),
         'abortions': _int(abortions.text),
         'living_children': _int(living.text),
+        'gestational_age_weeks': gaWeeksVal,
+        'gestational_age_days': gaDaysVal,
         'questionnaire': q,
       };
+
+      if (payload['lmp'] == null && gaWeeksVal != null) {
+        final totalDays = (gaWeeksVal * 7) + (gaDaysVal ?? 0);
+        final estLmp = DateTime.now().subtract(Duration(days: totalDays));
+        final estEdd = estLmp.add(const Duration(days: 280));
+        payload['lmp'] = _formatDate(estLmp);
+        if (payload['edd'] == null) {
+          payload['edd'] = _formatDate(estEdd);
+        }
+      }
 
       final res = await ApiClient.instance.post('/api/v1/patients', payload);
       if (mounted) {
@@ -248,7 +308,8 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
                   ],
                   if (step == 1) ...[
                     _section('Pregnancy details'),
-                    _field('LMP (YYYY-MM-DD)', lmp),
+                    _gestationalAgeFields(),
+                    _field('LMP (YYYY-MM-DD)', lmp, onChanged: _onLmpChanged),
                     _field('EDD (YYYY-MM-DD)', edd),
                     _field('Gravida (G)', gravida, numeric: true),
                     _field('Parity (P)', parity, numeric: true),
@@ -309,7 +370,14 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
                       style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
                       onPressed: saving
                           ? null
-                          : () => step < 2 ? setState(() => step++) : save(),
+                          : () {
+                              if (!form.currentState!.validate()) return;
+                              if (step < 2) {
+                                setState(() => step++);
+                              } else {
+                                save();
+                              }
+                            },
                       child: saving
                           ? const SizedBox(
                               height: 18,
@@ -321,6 +389,96 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _gestationalAgeFields() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: const [
+                Icon(Icons.calendar_month, color: AppColors.crimson, size: 18),
+                SizedBox(width: 8),
+                Text(
+                  'Gestational Age',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: AppColors.ink),
+                ),
+                SizedBox(width: 6),
+                Text(
+                  '(Weeks ≤ 42, Days ≤ 7)',
+                  style: TextStyle(fontSize: 11, color: AppColors.muted, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: TextFormField(
+                    controller: gaWeeks,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Weeks (≤ 42)',
+                      hintText: '0 - 42',
+                      suffixText: 'wks',
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    onChanged: (_) => _onGaChanged(),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return null;
+                      final n = int.tryParse(v.trim());
+                      if (n == null || n < 0 || n > 42) {
+                        return 'Weeks must be ≤ 42';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextFormField(
+                    controller: gaDays,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Days (≤ 7)',
+                      hintText: '0 - 7',
+                      suffixText: 'days',
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                    onChanged: (_) => _onGaChanged(),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return null;
+                      final n = int.tryParse(v.trim());
+                      if (n == null || n < 0 || n > 7) {
+                        return 'Days must be ≤ 7';
+                      }
+                      return null;
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Dynamic progression: backend automatically increments gestational age daily from registration date.',
+              style: TextStyle(fontSize: 10, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
             ),
           ],
         ),
@@ -342,6 +500,7 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
     bool required = false,
     bool numeric = false,
     int maxLines = 1,
+    ValueChanged<String>? onChanged,
   }) =>
       Padding(
         padding: const EdgeInsets.only(bottom: 12),
@@ -349,6 +508,7 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
           controller: c,
           maxLines: maxLines,
           keyboardType: numeric ? TextInputType.number : TextInputType.text,
+          onChanged: onChanged,
           validator: required ? (v) => v == null || v.trim().isEmpty ? 'Required field' : null : null,
           decoration: InputDecoration(labelText: label),
         ),

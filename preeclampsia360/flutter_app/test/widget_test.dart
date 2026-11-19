@@ -6,6 +6,8 @@ import 'package:preeclampsia360/features/clinical/bp_entry_screen.dart';
 import 'package:preeclampsia360/features/patients/patient_registration_screen.dart';
 import 'package:preeclampsia360/features/referrals/referral_screen.dart';
 import 'package:preeclampsia360/features/referrals/stabilize_patient_dialog.dart';
+import 'package:preeclampsia360/features/referrals/nearby_hospitals_map_screen.dart';
+import 'package:preeclampsia360/features/dashboard/thc_web_dashboard.dart';
 import 'package:preeclampsia360/features/trends/bp_trend_graph.dart';
 import 'package:preeclampsia360/features/trends/bp_overview_card.dart';
 import 'package:preeclampsia360/features/trends/trend_insights_view.dart';
@@ -23,6 +25,7 @@ void main() {
     expect(find.text('Sign In'), findsOneWidget);
 
     // Try submitting empty
+    await tester.ensureVisible(find.text('Sign In'));
     await tester.tap(find.text('Sign In'));
     await tester.pump();
     expect(find.text('Enter your assigned ID and 6-digit PIN.'), findsOneWidget);
@@ -30,6 +33,7 @@ void main() {
     // Enter ID and 5-digit PIN (invalid length)
     await tester.enterText(find.byType(TextField).first, 'PY-PHC-ANM-01');
     await tester.enterText(find.byType(TextField).last, '12345');
+    await tester.ensureVisible(find.text('Sign In'));
     await tester.tap(find.text('Sign In'));
     await tester.pump();
     expect(find.text('Enter your assigned ID and 6-digit PIN.'), findsOneWidget);
@@ -65,6 +69,27 @@ void main() {
     await tester.tap(continueBtn);
     await tester.pumpAndSettle();
     expect(find.textContaining('Obstetric history'), findsOneWidget);
+    expect(find.text('Gestational Age'), findsOneWidget);
+    expect(find.text('Weeks (≤ 42)'), findsOneWidget);
+    expect(find.text('Days (≤ 7)'), findsOneWidget);
+
+    // Test invalid GA Weeks (> 42)
+    final weeksField = find.widgetWithText(TextFormField, 'Weeks (≤ 42)');
+    await tester.enterText(weeksField, '45');
+    await tester.pump();
+    await tester.tap(continueBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('Weeks must be ≤ 42'), findsOneWidget);
+
+    // Test valid GA (28 weeks, 3 days)
+    await tester.enterText(weeksField, '28');
+    final daysField = find.widgetWithText(TextFormField, 'Days (≤ 7)');
+    await tester.enterText(daysField, '3');
+    await tester.pump();
+    await tester.tap(continueBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('Weeks must be ≤ 42'), findsNothing);
+    expect(find.textContaining('Medical & lifestyle'), findsOneWidget);
   });
 
   testWidgets('5. Referral screen displays header and create button', (WidgetTester tester) async {
@@ -209,5 +234,82 @@ void main() {
     expect(find.text('Betamethasone 12mg'), findsOneWidget);
     expect(find.text('Dexamethasone 12mg'), findsOneWidget);
     expect(find.text('Print Referral Sheet'), findsOneWidget);
+  });
+
+  testWidgets('8. Puducherry Maternity Hospitals Map & Referral Routing Screen', (WidgetTester tester) async {
+    await tester.pumpWidget(const MaterialApp(
+      home: NearbyHospitalsMapScreen(
+        patientId: 'p-test-01',
+        patientName: 'Nivedha',
+        patientCode: 'PE360-TEST01',
+        selectedMedicines: ['Tab Labetalol 100 mg', 'IV MgSO4 4g iv'],
+      ),
+    ));
+    await tester.pump();
+
+    // Verify AppBar and Header
+    expect(find.text('Maternity Care Referral Map'), findsOneWidget);
+    expect(find.textContaining('Nivedha'), findsWidgets);
+    expect(find.text('RED ALERT'), findsOneWidget);
+
+    // Verify all 5 Puducherry hospitals are present on the map
+    expect(find.text('JIPMER'), findsWidgets);
+    expect(find.text('IGMC&RI'), findsWidgets);
+    expect(find.text('PIMS'), findsWidgets);
+    expect(find.text('RGGWCH'), findsWidgets);
+    expect(find.text('SMVMCH'), findsWidgets);
+
+    // Verify Map legend
+    expect(find.text('MAP LEGEND'), findsOneWidget);
+
+    // Verify action button to assign patient and send referral sheet
+    expect(find.textContaining('Assign Patient & Send Referral Sheet to'), findsOneWidget);
+  });
+
+  testWidgets('9. HealthcareWorkerIdInputFormatter auto-fills hyphens as typed', (WidgetTester tester) async {
+    final formatter = HealthcareWorkerIdInputFormatter();
+
+    // 1. Typing 'pyphcanmmuth' -> 'PY-PHC-ANM-MUTH'
+    var res = formatter.formatEditUpdate(
+      const TextEditingValue(text: ''),
+      const TextEditingValue(text: 'pyphcanmmuth'),
+    );
+    expect(res.text, 'PY-PHC-ANM-MUTH');
+
+    // 2. Typing 'pyphcmuth' -> 'PY-PHC-MUTH'
+    res = formatter.formatEditUpdate(
+      const TextEditingValue(text: ''),
+      const TextEditingValue(text: 'pyphcmuth'),
+    );
+    expect(res.text, 'PY-PHC-MUTH');
+
+    // 3. Typing 'pyphcanmlaws' -> 'PY-PHC-ANM-LAWS'
+    res = formatter.formatEditUpdate(
+      const TextEditingValue(text: ''),
+      const TextEditingValue(text: 'pyphcanmlaws'),
+    );
+    expect(res.text, 'PY-PHC-ANM-LAWS');
+
+    // 4. Typing 'py' -> auto-fills 'PY-'
+    res = formatter.formatEditUpdate(
+      const TextEditingValue(text: 'p'),
+      const TextEditingValue(text: 'py'),
+    );
+    expect(res.text, 'PY-');
+  });
+
+  testWidgets('10. THC Web Dashboard View rendering and PHC directory navigation', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(const MaterialApp(
+      home: THCWebDashboardView(),
+    ));
+    await tester.pump();
+
+    expect(find.text('THC COMMAND CENTER'), findsOneWidget);
+    expect(find.text('Affiliated PHCs'), findsWidgets);
+    expect(find.textContaining('Hospital Referrals & Handover'), findsOneWidget);
   });
 }

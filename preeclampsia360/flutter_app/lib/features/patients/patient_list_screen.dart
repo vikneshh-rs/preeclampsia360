@@ -401,6 +401,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
     final bloodCtrl = TextEditingController(text: p['blood_group'] ?? '');
     final lmpCtrl = TextEditingController(text: p['lmp'] ?? '');
     final eddCtrl = TextEditingController(text: p['edd'] ?? '');
+    final gaWeeksCtrl = TextEditingController(text: p['gestational_age_weeks']?.toString() ?? '');
+    final gaDaysCtrl = TextEditingController(text: p['gestational_age_days']?.toString() ?? '');
     final gCtrl = TextEditingController(text: p['gravida']?.toString() ?? '');
     final pCtrl = TextEditingController(text: p['parity']?.toString() ?? '');
     final aCtrl = TextEditingController(text: p['abortions']?.toString() ?? '');
@@ -430,6 +432,14 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
+                    Expanded(child: TextField(controller: gaWeeksCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'GA Weeks (≤ 42)', suffixText: 'wks'))),
+                    const SizedBox(width: 8),
+                    Expanded(child: TextField(controller: gaDaysCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'GA Days (≤ 7)', suffixText: 'days'))),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
                     Expanded(child: TextField(controller: gCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'G (Gravida)'))),
                     const SizedBox(width: 8),
                     Expanded(child: TextField(controller: pCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'P (Parity)'))),
@@ -456,6 +466,8 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                   'blood_group': bloodCtrl.text.trim().isEmpty ? null : bloodCtrl.text.trim(),
                   'lmp': lmpCtrl.text.trim().isEmpty ? null : lmpCtrl.text.trim(),
                   'edd': eddCtrl.text.trim().isEmpty ? null : eddCtrl.text.trim(),
+                  'gestational_age_weeks': int.tryParse(gaWeeksCtrl.text.trim()),
+                  'gestational_age_days': int.tryParse(gaDaysCtrl.text.trim()),
                   'gravida': int.tryParse(gCtrl.text.trim()),
                   'parity': int.tryParse(pCtrl.text.trim()),
                   'abortions': int.tryParse(aCtrl.text.trim()),
@@ -715,6 +727,7 @@ class _PatientDetailScreenState extends State<PatientDetailScreen> {
                     spacing: 20,
                     runSpacing: 16,
                     children: [
+                      _Info('Gestational Age', p['current_gestational_age'] ?? p['gestational_age'] ?? (p['gestational_age_weeks'] != null ? '${p['gestational_age_weeks']}w ${p['gestational_age_days'] ?? 0}d' : null)),
                       _Info('Blood group', p['blood_group']),
                       _Info('LMP', p['lmp']),
                       _Info('EDD', p['edd']),

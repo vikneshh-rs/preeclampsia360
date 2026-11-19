@@ -1,5 +1,7 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
+import os
 from fastapi import FastAPI, Depends, HTTPException, Query, Header, status
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from .config import settings
@@ -37,6 +39,17 @@ app.include_router(workflows_router)
 app.include_router(sync_router)
 app.include_router(ocr_router)
 app.include_router(trends_router)
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+@app.get("/thc", response_class=HTMLResponse)
+@app.get("/thc/dashboard", response_class=HTMLResponse)
+def serve_thc_dashboard():
+    dashboard_path = os.path.join(STATIC_DIR, "thc_dashboard.html")
+    if os.path.exists(dashboard_path):
+        with open(dashboard_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse("<h1>THC Command Center Dashboard not found</h1>", status_code=404)
 
 @app.get("/health")
 def health():
@@ -77,6 +90,111 @@ def facility_scope(user: dict = Depends(current_user)):
     accessible = get_accessible_facility_ids(db, user["sub"])
     return {"assignments": assignments, "accessible_facility_ids": list(accessible)}
 
+def calculate_current_gestational_age(patient: dict) -> dict:
+    """
+    Computes current Gestational Age dynamically updated from the date of Patient Registration.
+    Uses registered GA (weeks + days) plus elapsed days since registration.
+    Fallback to LMP if baseline GA was not given.
+    """
+    now = datetime.now(timezone.utc).date()
+    qd = patient.get("questionnaire_data") or {}
+    ob = qd.get("obstetric_history") or {}
+
+    # Determine registration date
+    reg_date = None
+    reg_date_str = qd.get("registration_date") or ob.get("registration_date")
+    if reg_date_str:
+        try:
+            reg_date = date.fromisoformat(str(reg_date_str)[:10])
+        except Exception:
+            pass
+    if not reg_date and patient.get("created_at"):
+        try:
+            reg_date = datetime.fromisoformat(str(patient["created_at"]).replace("Z", "+00:00")).date()
+        except Exception:
+            pass
+    if not reg_date:
+        reg_date = now
+
+    elapsed_days = max(0, (now - reg_date).days)
+
+    # 1. Baseline GA recorded at registration
+    base_w = (
+        qd.get("ga_weeks_at_registration")
+        if qd.get("ga_weeks_at_registration") is not None
+        else (
+            ob.get("ga_weeks_at_registration")
+            if ob.get("ga_weeks_at_registration") is not None
+            else (
+                qd.get("gestational_age_weeks")
+                if qd.get("gestational_age_weeks") is not None
+                else ob.get("gestational_age_weeks")
+            )
+        )
+    )
+    base_d = (
+        qd.get("ga_days_at_registration")
+        if qd.get("ga_days_at_registration") is not None
+        else (
+            ob.get("ga_days_at_registration")
+            if ob.get("ga_days_at_registration") is not None
+            else (
+                qd.get("gestational_age_days")
+                if qd.get("gestational_age_days") is not None
+                else (ob.get("gestational_age_days") or 0)
+            )
+        )
+    )
+
+    if base_w is not None:
+        try:
+            bw = int(base_w)
+            bd = int(base_d or 0)
+            total_current_days = (bw * 7) + bd + elapsed_days
+            curr_w = total_current_days // 7
+            curr_d = total_current_days % 7
+            return {
+                "gestational_age_weeks": curr_w,
+                "gestational_age_days": curr_d,
+                "current_gestational_age": f"{curr_w} weeks {curr_d} days",
+                "gestational_age": f"{curr_w}w {curr_d}d",
+                "ga_at_registration": f"{bw}w {bd}d",
+                "days_since_registration": elapsed_days,
+                "registration_date": reg_date.isoformat(),
+            }
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Fallback to LMP
+    lmp_raw = patient.get("lmp") or qd.get("lmp")
+    if lmp_raw:
+        try:
+            lmp_date = date.fromisoformat(str(lmp_raw)[:10])
+            days_from_lmp = max(0, (now - lmp_date).days)
+            curr_w = days_from_lmp // 7
+            curr_d = days_from_lmp % 7
+            return {
+                "gestational_age_weeks": curr_w,
+                "gestational_age_days": curr_d,
+                "current_gestational_age": f"{curr_w} weeks {curr_d} days",
+                "gestational_age": f"{curr_w}w {curr_d}d",
+                "ga_at_registration": None,
+                "days_since_registration": elapsed_days,
+                "registration_date": reg_date.isoformat(),
+            }
+        except Exception:
+            pass
+
+    return {
+        "gestational_age_weeks": None,
+        "gestational_age_days": None,
+        "current_gestational_age": "Unknown",
+        "gestational_age": "—",
+        "ga_at_registration": None,
+        "days_since_registration": elapsed_days,
+        "registration_date": reg_date.isoformat(),
+    }
+
 @app.post("/api/v1/patients", status_code=201)
 def create_patient(
     payload: PatientCreate,
@@ -98,7 +216,27 @@ def create_patient(
         facility_id = assignments[0]["facility_id"]
 
     data = payload.model_dump(mode="json")
-    questionnaire = data.pop("questionnaire", {})
+    questionnaire = data.pop("questionnaire", {}) or {}
+
+    ga_weeks = data.pop("gestational_age_weeks", None)
+    ga_days = data.pop("gestational_age_days", None)
+    now_utc = datetime.now(timezone.utc)
+
+    if ga_weeks is not None:
+        questionnaire["gestational_age_weeks"] = ga_weeks
+        questionnaire["ga_weeks_at_registration"] = ga_weeks
+        questionnaire["gestational_age_days"] = ga_days or 0
+        questionnaire["ga_days_at_registration"] = ga_days or 0
+        questionnaire["registration_date"] = now_utc.date().isoformat()
+        
+        # If LMP is not supplied, auto-estimate LMP & EDD from Gestational Age
+        if not data.get("lmp"):
+            total_days = (ga_weeks * 7) + (ga_days or 0)
+            est_lmp = now_utc.date() - timedelta(days=total_days)
+            data["lmp"] = est_lmp.isoformat()
+            if not data.get("edd"):
+                data["edd"] = (est_lmp + timedelta(days=280)).isoformat()
+
     row = {
         **data,
         "facility_id": facility_id,
@@ -111,6 +249,8 @@ def create_patient(
         raise HTTPException(status_code=400, detail="Patient could not be created")
     
     patient = result.data[0]
+    patient.update(calculate_current_gestational_age(patient))
+
     # Log patient creation audit event
     db.table("audit_logs").insert({
         "actor_user_id": user["sub"],
@@ -146,7 +286,7 @@ def list_patients(
     # PostgREST in_ filter
     query = (
         db.table("patients")
-        .select("id,patient_code,full_name,date_of_birth,phone,created_at,facility_id,blood_group,questionnaire_data")
+        .select("id,patient_code,full_name,date_of_birth,phone,created_at,facility_id,blood_group,questionnaire_data,lmp,edd,gravida,parity,abortions,living_children")
         .in_("facility_id", target_fids)
         .order("created_at", desc=True)
         .limit(limit)
@@ -199,6 +339,9 @@ def list_patients(
         except Exception:
             pass
 
+    for r in rows:
+        r.update(calculate_current_gestational_age(r))
+
     return {"items": rows}
 
 @app.get("/api/v1/anm/due-visits")
@@ -214,7 +357,7 @@ def get_anm_due_visits(user: dict = Depends(current_user)):
 
     patients = (
         db.table("patients")
-        .select("id,patient_code,full_name,date_of_birth,phone,created_at,facility_id,blood_group,questionnaire_data")
+        .select("id,patient_code,full_name,date_of_birth,phone,created_at,facility_id,blood_group,questionnaire_data,lmp,edd,gravida,parity,abortions,living_children")
         .in_("facility_id", list(accessible_fids))
         .order("created_at", desc=True)
         .execute()
@@ -244,6 +387,7 @@ def get_anm_due_visits(user: dict = Depends(current_user)):
     now_utc = datetime.now(timezone.utc)
     due_list = []
     for p in patients:
+        p.update(calculate_current_gestational_age(p))
         latest = latest_bp_map.get(p["id"])
         if latest:
             p["last_visit_at"] = latest["measured_at"]
@@ -273,6 +417,7 @@ def get_patient(patient_id: str, user: dict = Depends(current_user)):
     db = supabase_admin()
     # Unified authorization: supports direct, hierarchy, and active referral access
     patient = assert_patient_access(db, user["sub"], patient_id, action="read")
+    patient.update(calculate_current_gestational_age(patient))
     return patient
 
 @app.get("/api/v1/patients/{patient_id}/investigations")
@@ -309,12 +454,26 @@ def update_patient(patient_id: str, payload: PatientUpdate, user: dict = Depends
     if not update_data:
         return patient
 
+    ga_w = update_data.pop("gestational_age_weeks", None)
+    ga_d = update_data.pop("gestational_age_days", None)
+    if ga_w is not None or ga_d is not None:
+        qd = dict((update_data.get("questionnaire_data") or patient.get("questionnaire_data") or {}))
+        if ga_w is not None:
+            qd["gestational_age_weeks"] = ga_w
+            qd["ga_weeks_at_registration"] = ga_w
+        if ga_d is not None:
+            qd["gestational_age_days"] = ga_d
+            qd["ga_days_at_registration"] = ga_d
+        qd["registration_date"] = datetime.now(timezone.utc).date().isoformat()
+        update_data["questionnaire_data"] = qd
+
     update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     result = db.table("patients").update(update_data).eq("id", patient_id).execute()
     if not result.data:
         raise HTTPException(status_code=400, detail="Failed to update patient profile")
 
     updated = result.data[0]
+    updated.update(calculate_current_gestational_age(updated))
 
     # If investigations are present, also sync to dedicated patient_investigations table if migrated
     inv = (payload.questionnaire_data or {}).get("investigations") if isinstance(payload.questionnaire_data, dict) else None
