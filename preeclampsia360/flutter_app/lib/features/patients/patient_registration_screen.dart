@@ -213,7 +213,7 @@ class _PatientRegistrationScreenState extends State<PatientRegistrationScreen> {
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Register pregnant woman')),
+      appBar: AppBar(title: const Text('Smart Pregnancy Registration')),
       body: Form(
         key: form,
         child: Column(

@@ -22,7 +22,7 @@ class DashboardScreen extends StatelessWidget {
         ]),
         const SizedBox(height: 22), const Text('Quick actions', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800, color: AppColors.ink)), const SizedBox(height: 12),
         GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: wide ? 3 : 2, childAspectRatio: 2.6, crossAxisSpacing: 12, mainAxisSpacing: 12, children: const [
-          _Action(icon: Icons.person_add_alt_1, label: 'Register patient'), _Action(icon: Icons.camera_alt_outlined, label: 'Capture BP'), _Action(icon: Icons.groups_2_outlined, label: 'My patients'),
+          _Action(icon: Icons.person_add_alt_1, label: 'Smart Pregnancy Registration'), _Action(icon: Icons.camera_alt_outlined, label: 'Capture BP'), _Action(icon: Icons.groups_2_outlined, label: 'My patients'),
         ]),
         const SizedBox(height: 22), Card(child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: const [Text('Your care workspace', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)), SizedBox(height: 8), Text('Connect your Supabase project and sign in to load your facility’s live patient list, follow-ups and alerts.', style: TextStyle(color: AppColors.muted, height: 1.4)), SizedBox(height: 12), LinearProgressIndicator(value: null, color: AppColors.rose, backgroundColor: AppColors.paleRose)]))),
       ]))),

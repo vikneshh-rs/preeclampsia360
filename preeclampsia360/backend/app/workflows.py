@@ -16,8 +16,8 @@ router = APIRouter(prefix="/api/v1", tags=["clinical-workflows"])
 
 ROLE_HOME = {
     "ASHA": ["My Mothers", "Visit Log", "Symptom Reports", "Follow-up Tasks", "Referral Companion"],
-    "ANM": ["Patient Registration", "Patient List", "BP Scanner", "Risk Radar", "Follow-ups", "Referrals", "Postpartum"],
-    "VHN": ["Patient Registration", "Patient List", "BP Scanner", "Risk Radar", "Follow-ups", "Referrals", "Postpartum"],
+    "ANM": ["Smart Pregnancy Registration", "Patient List", "BP Scanner", "Risk Radar", "Follow-ups", "Referrals", "Postpartum"],
+    "VHN": ["Smart Pregnancy Registration", "Patient List", "BP Scanner", "Risk Radar", "Follow-ups", "Referrals", "Postpartum"],
     "PHC_MO": ["PHC Dashboard", "Clinical Review", "Risk Radar", "Referral Board", "Team & Follow-ups", "Reports"],
     "CHC_MO": ["CHC Dashboard", "PHC Overview", "Clinical Alerts", "Referral Coordination", "Workload Analytics"],
     "CHC_ADMIN": ["CHC Dashboard", "PHC Overview", "User Management", "Referral Coordination", "Reports"],

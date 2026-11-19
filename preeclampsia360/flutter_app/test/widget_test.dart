@@ -50,7 +50,7 @@ void main() {
   testWidgets('4. Patient registration screen: validation and progression', (WidgetTester tester) async {
     await tester.pumpWidget(const MaterialApp(home: PatientRegistrationScreen()));
     await tester.pump();
-    expect(find.text('Register pregnant woman'), findsOneWidget);
+    expect(find.text('Smart Pregnancy Registration'), findsOneWidget);
     expect(find.text('Mother’s details'), findsOneWidget);
     expect(find.text('Continue'), findsOneWidget);
 

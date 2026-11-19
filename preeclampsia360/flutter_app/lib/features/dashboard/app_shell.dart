@@ -480,7 +480,7 @@ class _DashboardHomeState extends State<DashboardHome> {
             children: [
               _ActionChip(
                 icon: Icons.person_add_alt,
-                label: 'Register mother',
+                label: 'Smart Pregnancy Registration',
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(builder: (_) => const PatientRegistrationScreen()),
                 ).then((_) => refresh()),
