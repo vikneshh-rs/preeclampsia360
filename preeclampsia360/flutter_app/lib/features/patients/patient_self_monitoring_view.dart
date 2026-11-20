@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../../shared/ui.dart';
@@ -326,12 +327,21 @@ class _PatientSelfMonitoringViewState extends State<PatientSelfMonitoringView> {
                       children: [
                         Text(
                           fullName,
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),
+                          style: GoogleFonts.playfairDisplay(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 20,
+                            letterSpacing: -0.3,
+                          ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Text(
                           'Patient ID: $patientCode • $facilityName',
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          style: GoogleFonts.manrope(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
@@ -712,3 +722,4 @@ class _PatientSelfMonitoringViewState extends State<PatientSelfMonitoringView> {
     );
   }
 }
+

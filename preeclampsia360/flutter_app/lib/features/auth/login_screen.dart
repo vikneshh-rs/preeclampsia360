@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../dashboard/app_shell.dart';
@@ -50,18 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         final errText = e.toString();
         if (errText.contains('Cannot reach')) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.critical,
-              duration: const Duration(seconds: 8),
-              content: const Text('Cannot reach server. Verify connection and check Server URL.'),
-              action: SnackBarAction(
-                label: 'Configure URL',
-                textColor: Colors.white,
-                onPressed: _showServerUrlDialog,
-              ),
-            ),
-          );
+          showMessage(context, 'Cannot reach Preeclampsia 360 server. Check internet connection.', error: true);
         } else {
           showMessage(context, errText, error: true);
         }
@@ -102,18 +92,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) {
         final errText = e.toString();
         if (errText.contains('Cannot reach')) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.critical,
-              duration: const Duration(seconds: 8),
-              content: const Text('Cannot reach server. Verify PC server is running and check Server URL.'),
-              action: SnackBarAction(
-                label: 'Configure URL',
-                textColor: Colors.white,
-                onPressed: _showServerUrlDialog,
-              ),
-            ),
-          );
+          showMessage(context, 'Cannot reach Preeclampsia 360 server. Check internet connection.', error: true);
         } else {
           showMessage(context, errText, error: true);
         }
@@ -121,141 +100,6 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => busy = false);
     }
-  }
-
-  Future<void> _showServerUrlDialog() async {
-    final urlCtrl = TextEditingController(text: ApiClient.instance.baseUrl);
-    bool testing = false;
-    String? testResult;
-    bool? testSuccess;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.dns_rounded, color: AppColors.crimson, size: 22),
-                  SizedBox(width: 8),
-                  Text('Server API URL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                ],
-              ),
-              content: SizedBox(
-                width: 440,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Enter the IP address of your host PC running the backend server. Make sure your phone and PC are connected to the same Wi-Fi network.',
-                      style: TextStyle(fontSize: 12, color: AppColors.muted),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: urlCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'API Base URL',
-                        hintText: 'https://preeclampsia360-api.onrender.com',
-                        prefixIcon: Icon(Icons.link),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text('Quick Presets:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.ink)),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        ActionChip(
-                          avatar: const Icon(Icons.cloud_done, size: 14, color: AppColors.crimson),
-                          label: const Text('Render Cloud (Live)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                          onPressed: () => setDialogState(() => urlCtrl.text = 'https://preeclampsia360-api.onrender.com'),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.wifi, size: 14),
-                          label: const Text('Wi-Fi LAN (192.168.1.8)', style: TextStyle(fontSize: 11)),
-                          onPressed: () => setDialogState(() => urlCtrl.text = 'http://192.168.1.8:8000'),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.phone_android, size: 14),
-                          label: const Text('Emulator (10.0.2.2)', style: TextStyle(fontSize: 11)),
-                          onPressed: () => setDialogState(() => urlCtrl.text = 'http://10.0.2.2:8000'),
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.laptop, size: 14),
-                          label: const Text('Localhost (127.0.0.1)', style: TextStyle(fontSize: 11)),
-                          onPressed: () => setDialogState(() => urlCtrl.text = 'http://127.0.0.1:8000'),
-                        ),
-                      ],
-                    ),
-                    if (testResult != null) ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: testSuccess == true ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: testSuccess == true ? const Color(0xFF86EFAC) : const Color(0xFFFECDD3)),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(testSuccess == true ? Icons.check_circle : Icons.error, color: testSuccess == true ? const Color(0xFF16A34A) : AppColors.critical, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(testResult!, style: TextStyle(fontSize: 11, color: testSuccess == true ? const Color(0xFF166534) : AppColors.critical, fontWeight: FontWeight.bold))),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                OutlinedButton(
-                  onPressed: testing
-                      ? null
-                      : () async {
-                          setDialogState(() {
-                            testing = true;
-                            testResult = 'Testing connection...';
-                            testSuccess = null;
-                          });
-                          final ok = await ApiClient.instance.testConnection(urlCtrl.text.trim());
-                          setDialogState(() {
-                            testing = false;
-                            testSuccess = ok;
-                            testResult = ok ? 'Connected successfully! (HTTP 200 OK)' : 'Failed to reach server at this URL.';
-                          });
-                        },
-                  child: testing
-                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Test Connection'),
-                ),
-                  FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
-                    onPressed: () async {
-                      await ApiClient.instance.setBaseUrl(urlCtrl.text.trim());
-                      if (!ctx.mounted) return;
-                      Navigator.pop(ctx);
-                      if (!mounted) return;
-                      setState(() {});
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Server URL updated to ${ApiClient.instance.baseUrl}')),
-                      );
-                    },
-                    child: const Text('Save & Apply'),
-                  ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   Future<void> _showChangePinDialog(String loginId, String currentPin) async {
@@ -270,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: const Text('Update Temporary PIN'),
+              title: const Text('Security: Set New 6-Digit PIN'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,99 +204,110 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.warmIvory,
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 460),
+            constraints: const BoxConstraints(maxWidth: 440),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.symmetric(horizontal: AppSpacing.xl, vertical: AppSpacing.xxl),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        height: 72,
-                        width: 72,
-                        decoration: BoxDecoration(
-                          color: AppColors.paleRose,
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: const Icon(
-                          Icons.pregnant_woman_rounded,
-                          color: AppColors.crimson,
-                          size: 40,
-                        ),
+                  // App Crest / Emblem (Medical maternity icon)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      height: 64,
+                      width: 64,
+                      decoration: BoxDecoration(
+                        color: AppColors.softBlush,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: AppColors.border, width: 1.2),
                       ),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF475569),
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        onPressed: _showServerUrlDialog,
-                        icon: const Icon(Icons.dns_rounded, size: 14, color: AppColors.crimson),
-                        label: const Text(
-                          'Server URL',
-                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
+                      child: const Icon(
+                        Icons.pregnant_woman_rounded,
+                        color: AppColors.deepBurgundy,
+                        size: 36,
                       ),
-                    ],
+                    ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.xl),
                   Text(
                     'Preeclampsia 360',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: AppColors.crimson,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                      color: AppColors.darkWine,
+                    ),
                   ),
-                  const SizedBox(height: 6),
-                  const Text(
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
                     'Maternal Monitoring & Care Coordination',
-                    style: TextStyle(color: AppColors.muted),
+                    style: GoogleFonts.manrope(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.slate,
+                    ),
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: AppSpacing.xxl),
+
+                  // Segmented Switch between Staff Login and Patient Login
                   SegmentedButton<bool>(
                     segments: const [
                       ButtonSegment<bool>(
                         value: false,
-                        label: Text('Staff Login', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        icon: Icon(Icons.badge_outlined, size: 18),
+                        label: Text('Staff Login'),
+                        icon: Icon(Icons.badge_outlined, size: 16),
                       ),
                       ButtonSegment<bool>(
                         value: true,
-                        label: Text('Patient Login', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        icon: Icon(Icons.pregnant_woman, size: 18),
+                        label: Text('Patient Login'),
+                        icon: Icon(Icons.pregnant_woman_rounded, size: 16),
                       ),
                     ],
                     selected: {isPatientLogin},
                     onSelectionChanged: (s) => setState(() => isPatientLogin = s.first),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: AppSpacing.xl),
+
                   if (!isPatientLogin) ...[
-                    const P360Card(
-                      child: Text(
-                        'Healthcare Worker Login',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                    // Healthcare Worker Login Card
+                    P360Card(
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Healthcare Worker Login',
+                            style: GoogleFonts.manrope(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.darkWine,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Access clinical care coordination for your facility.',
+                            style: GoogleFonts.manrope(fontSize: 12, color: AppColors.slate),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.lg),
                     TextField(
                       controller: id,
                       textCapitalization: TextCapitalization.characters,
                       inputFormatters: [HealthcareWorkerIdInputFormatter()],
                       decoration: const InputDecoration(
                         labelText: 'Healthcare Worker ID',
-                        prefixIcon: Icon(Icons.badge_outlined),
-                        hintText: 'e.g. PY-PHC-ANM-MUTH or PY-PHC-MUTH',
+                        prefixIcon: Icon(Icons.badge_outlined, color: AppColors.slate),
+                        hintText: 'e.g. PY-PHC-MUTH or PY-PHC-ANM-MUTH',
                         helperText: 'Hyphens (-) auto-fill as you type your PHC or ANM area code',
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: AppSpacing.md),
                     TextField(
                       controller: pin,
                       keyboardType: TextInputType.number,
@@ -460,90 +315,93 @@ class _LoginScreenState extends State<LoginScreen> {
                       obscureText: hide,
                       decoration: InputDecoration(
                         labelText: '6-digit PIN',
-                        prefixIcon: const Icon(Icons.lock_outline),
+                        prefixIcon: const Icon(Icons.lock_outline, color: AppColors.slate),
                         counterText: '',
                         suffixIcon: IconButton(
                           onPressed: () => setState(() => hide = !hide),
-                          icon: Icon(hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                          icon: Icon(hide ? Icons.visibility_outlined : Icons.visibility_off_outlined, color: AppColors.slate),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    FilledButton(
-                      onPressed: busy ? null : submit,
-                      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
-                      child: busy
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Text('Sign In'),
+                    const SizedBox(height: AppSpacing.xl),
+                    SizedBox(
+                      height: 50,
+                      child: FilledButton(
+                        onPressed: busy ? null : submit,
+                        child: busy
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Text('Sign In'),
+                      ),
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
+                    const SizedBox(height: AppSpacing.lg),
+                    Text(
                       'No email or phone number required. Contact your facility administrator for account support.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.muted, fontSize: 12),
+                      style: GoogleFonts.manrope(color: AppColors.mutedGrey, fontSize: 12),
                     ),
                   ] else ...[
-                    Card(
-                      elevation: 0,
-                      color: AppColors.paleRose,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      child: const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Patient Self-Monitoring Login',
-                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.crimson),
+                    // Patient Login Card
+                    P360Card(
+                      color: AppColors.softBlush,
+                      border: const BorderSide(color: Color(0xFFFECDD3)),
+                      padding: const EdgeInsets.all(AppSpacing.lg),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Patient Self-Monitoring Login',
+                            style: GoogleFonts.playfairDisplay(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.deepBurgundy,
                             ),
-                            SizedBox(height: 4),
-                            Text(
-                              'Enter the unique Patient ID assigned to you during registration at your PHC or by your ANM.',
-                              style: TextStyle(fontSize: 12, color: AppColors.ink),
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Enter the unique Patient ID assigned to you during registration by your PHC Medical Officer or ANM.',
+                            style: GoogleFonts.manrope(fontSize: 12, color: AppColors.darkWine, height: 1.4),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: AppSpacing.lg),
                     TextField(
                       controller: patientIdCtrl,
                       textCapitalization: TextCapitalization.characters,
                       decoration: const InputDecoration(
                         labelText: 'Patient ID *',
-                        prefixIcon: Icon(Icons.badge_outlined),
+                        prefixIcon: Icon(Icons.badge_outlined, color: AppColors.deepBurgundy),
                         hintText: 'e.g. PE360-B635ACA278',
                         helperText: 'Case-insensitive. No password or PIN required.',
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    FilledButton.icon(
-                      onPressed: busy ? null : submitPatientLogin,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.crimson,
-                        minimumSize: const Size.fromHeight(54),
-                      ),
-                      icon: busy
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                            )
-                          : const Icon(Icons.login_rounded),
-                      label: Text(
-                        busy ? 'Signing in…' : 'Sign In as Patient',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    const SizedBox(height: AppSpacing.xl),
+                    SizedBox(
+                      height: 50,
+                      child: FilledButton.icon(
+                        onPressed: busy ? null : submitPatientLogin,
+                        icon: busy
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.login_rounded),
+                        label: Text(
+                          busy ? 'Signing in…' : 'Sign In as Patient',
+                          style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'If you do not have your Patient ID, please ask your Village Health Nurse (ANM) or PHC.',
+                    const SizedBox(height: AppSpacing.lg),
+                    Text(
+                      'If you do not have your Patient ID, please ask your Village Health Nurse (ANM) or visit your PHC.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.muted, fontSize: 12),
+                      style: GoogleFonts.manrope(color: AppColors.mutedGrey, fontSize: 12),
                     ),
                   ],
                 ],
@@ -557,18 +415,12 @@ class _LoginScreenState extends State<LoginScreen> {
 }
 
 /// Automatically auto-fills hyphens ("-") as healthcare workers type their ID.
-/// Example formats handled:
-///   - PY-PHC-MUTH       (PHC Medical Officer)
-///   - PY-PHC-ANM-MUTH   (Auxiliary Nurse Midwife)
-///   - PY-THC-MO-001     (Tertiary Hospital MO)
-///   - PY-SYS-ADMIN-001  (System Administrator)
 class HealthcareWorkerIdInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    // If the user is deleting, allow free deletion without force-inserting hyphens
     if (newValue.text.length < oldValue.text.length) {
       return newValue.copyWith(text: newValue.text.toUpperCase());
     }
@@ -587,20 +439,17 @@ class HealthcareWorkerIdInputFormatter extends TextInputFormatter {
         buffer.write('-');
         final rem1 = clean.substring(2);
 
-        // Facility level check: PHC, THC, CHC, SYS, HOSP
         if (rem1.startsWith('PHC')) {
           buffer.write('PHC');
           if (rem1.length > 3) {
             buffer.write('-');
             final rem2 = rem1.substring(3);
 
-            // Role check: ANM, ASHA, MO, or direct area code (e.g. MUTH)
             if (rem2.startsWith('ANM')) {
               buffer.write('ANM');
               if (rem2.length > 3) {
                 buffer.write('-');
                 final rem3 = rem2.substring(3);
-                // Area code up to 4 characters
                 buffer.write(rem3.length > 4 ? rem3.substring(0, 4) : rem3);
               }
             } else if (rem2.startsWith('ASHA')) {
@@ -618,7 +467,6 @@ class HealthcareWorkerIdInputFormatter extends TextInputFormatter {
                 buffer.write(rem3.length > 4 ? rem3.substring(0, 4) : rem3);
               }
             } else {
-              // Direct area code after PHC (e.g. PY-PHC-MUTH)
               buffer.write(rem2.length > 4 ? rem2.substring(0, 4) : rem2);
             }
           }
@@ -633,7 +481,6 @@ class HealthcareWorkerIdInputFormatter extends TextInputFormatter {
           buffer.write(rem1);
         }
       } else {
-        // Just 'PY' typed, auto-fill trailing hyphen
         buffer.write('-');
       }
     } else {

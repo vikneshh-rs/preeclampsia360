@@ -14,8 +14,7 @@ class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
   static const _storage = FlutterSecureStorage();
-  static const _defaultBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'https://preeclampsia360-api.onrender.com');
-  String _customBaseUrl = _defaultBaseUrl;
+  static const _defaultBaseUrl = 'https://preeclampsia360-api.onrender.com';
 
   String? _token;
   String? _refreshToken;
@@ -23,19 +22,10 @@ class ApiClient {
   Map<String, dynamic>? currentUser;
   List<dynamic> assignments = [];
 
-  String get baseUrl => _customBaseUrl;
-
-  Future<void> setBaseUrl(String url) async {
-    String clean = url.trim();
-    while (clean.endsWith('/')) {
-      clean = clean.substring(0, clean.length - 1);
-    }
-    _customBaseUrl = clean;
-    await _storage.write(key: 'custom_api_base_url', value: _customBaseUrl);
-  }
+  String get baseUrl => _defaultBaseUrl;
 
   Future<bool> testConnection([String? testUrl]) async {
-    final target = (testUrl != null && testUrl.trim().isNotEmpty) ? testUrl.trim() : baseUrl;
+    final target = baseUrl;
     try {
       final res = await http.get(Uri.parse('$target/health')).timeout(const Duration(seconds: 4));
       return res.statusCode == 200;
@@ -65,10 +55,6 @@ class ApiClient {
   }
 
   Future<void> restore() async {
-    final savedUrl = await _storage.read(key: 'custom_api_base_url');
-    if (savedUrl != null && savedUrl.trim().isNotEmpty) {
-      _customBaseUrl = savedUrl.trim();
-    }
     _token = await _storage.read(key: 'access_token');
     _refreshToken = await _storage.read(key: 'refresh_token');
     final userRaw = await _storage.read(key: 'current_user');

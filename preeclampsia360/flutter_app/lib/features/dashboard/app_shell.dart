@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../patients/patient_list_screen.dart';
@@ -97,11 +98,14 @@ class _AppShellState extends State<AppShell> {
     final user = ApiClient.instance.currentUser ?? {};
     return Scaffold(
       appBar: AppBar(
-        title: const Row(
+        title: Row(
           children: [
-            Icon(Icons.favorite_rounded, color: AppColors.crimson),
-            SizedBox(width: 9),
-            Text('Preeclampsia 360', style: TextStyle(fontWeight: FontWeight.w800)),
+            const Icon(Icons.favorite_rounded, color: AppColors.deepBurgundy),
+            const SizedBox(width: 9),
+            Text(
+              'Preeclampsia 360',
+              style: GoogleFonts.playfairDisplay(fontWeight: FontWeight.w700, fontSize: 20, color: AppColors.darkWine),
+            ),
           ],
         ),
         actions: [
@@ -1351,13 +1355,33 @@ class _Metric extends StatelessWidget {
   const _Metric({required this.title, required this.value, required this.icon, required this.color});
   @override
   Widget build(BuildContext context) => P360Card(
+        padding: const EdgeInsets.all(AppSpacing.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Icon(icon, color: color),
-            Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.ink), maxLines: 1, overflow: TextOverflow.ellipsis),
-            Text(title, style: const TextStyle(fontSize: 12, color: AppColors.muted)),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            Text(
+              value,
+              style: GoogleFonts.manrope(
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+                color: AppColors.darkWine,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              title,
+              style: GoogleFonts.manrope(fontSize: 12, color: AppColors.slate, fontWeight: FontWeight.w500),
+            ),
           ],
         ),
       );
@@ -1369,11 +1393,18 @@ class _ActionChip extends StatelessWidget {
   final VoidCallback onTap;
   const _ActionChip({required this.icon, required this.label, required this.onTap});
   @override
-  Widget build(BuildContext context) => ActionChip(
-        avatar: Icon(icon, color: AppColors.crimson, size: 18),
-        label: Text(label),
-        onPressed: onTap,
-        backgroundColor: Colors.white,
-        side: const BorderSide(color: AppColors.border),
+  Widget build(BuildContext context) => P360MotionButton(
+        onTap: onTap,
+        child: ActionChip(
+          avatar: Icon(icon, color: AppColors.deepBurgundy, size: 18),
+          label: Text(
+            label,
+            style: GoogleFonts.manrope(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+          onPressed: onTap,
+          backgroundColor: Colors.white,
+          side: const BorderSide(color: AppColors.border),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       );
 }
