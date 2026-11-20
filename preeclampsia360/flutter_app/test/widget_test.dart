@@ -8,6 +8,7 @@ import 'package:preeclampsia360/features/referrals/referral_screen.dart';
 import 'package:preeclampsia360/features/referrals/stabilize_patient_dialog.dart';
 import 'package:preeclampsia360/features/referrals/nearby_hospitals_map_screen.dart';
 import 'package:preeclampsia360/features/dashboard/thc_web_dashboard.dart';
+import 'package:preeclampsia360/features/patients/patient_self_monitoring_view.dart';
 import 'package:preeclampsia360/features/trends/bp_trend_graph.dart';
 import 'package:preeclampsia360/features/trends/bp_overview_card.dart';
 import 'package:preeclampsia360/features/trends/trend_insights_view.dart';
@@ -43,8 +44,9 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: BPEntryScreen()));
     await tester.pump();
     expect(find.text('Record blood pressure'), findsOneWidget);
-    expect(find.text('Manual'), findsOneWidget);
-    expect(find.text('Camera OCR'), findsOneWidget);
+    expect(find.text('Check BP'), findsOneWidget);
+    expect(find.text('Manual Entry'), findsOneWidget);
+    expect(find.text('Scan Machine'), findsOneWidget);
     expect(find.text('Urine Protein (Albumin Dipstick)'), findsOneWidget);
     expect(find.text('Imminent Symptoms (Danger Signs)'), findsOneWidget);
     await tester.drag(find.byType(ListView), const Offset(0, -400));
@@ -311,5 +313,37 @@ void main() {
     expect(find.text('THC COMMAND CENTER'), findsOneWidget);
     expect(find.text('Affiliated PHCs'), findsWidgets);
     expect(find.textContaining('Hospital Referrals & Handover'), findsOneWidget);
+  });
+
+  testWidgets('11. Patient Login Toggle and Patient Self-Monitoring View', (WidgetTester tester) async {
+    // A) Login Screen toggle to Patient Login
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+    expect(find.text('Staff Login'), findsOneWidget);
+    expect(find.text('Patient Login'), findsOneWidget);
+
+    // Switch to Patient Login
+    await tester.tap(find.text('Patient Login'));
+    await tester.pump();
+    expect(find.text('Patient Self-Monitoring Login'), findsOneWidget);
+    expect(find.text('Patient ID *'), findsOneWidget);
+    expect(find.text('Sign In as Patient'), findsOneWidget);
+
+    // B) Patient Self-Monitoring View elements (Only Check BP, Manual Entry, Scan Machine, Imminent Symptoms, Save Measurement)
+    await tester.pumpWidget(const MaterialApp(
+      home: PatientSelfMonitoringView(),
+    ));
+    await tester.pump();
+
+    expect(find.text('Preeclampsia 360'), findsOneWidget);
+    expect(find.text('Check BP'), findsOneWidget);
+    expect(find.text('Manual Entry'), findsOneWidget);
+    expect(find.text('Scan Machine'), findsOneWidget);
+    expect(find.text('Digital BP Monitor Connected'), findsOneWidget);
+    expect(find.text('Sync Reading from Machine'), findsOneWidget);
+    expect(find.text('Blood Pressure Reading'), findsOneWidget);
+    expect(find.text('Imminent Symptoms (Danger Signs)'), findsOneWidget);
+    expect(find.text('Severe Headache'), findsOneWidget);
+    expect(find.text('Blurred Vision / Flashes'), findsOneWidget);
+    expect(find.text('Save Measurement'), findsOneWidget);
   });
 }

@@ -580,7 +580,8 @@ def get_patient_questionnaires(patient_id: str, user: dict = Depends(current_use
 
 @app.post("/api/v1/bp/measurements", status_code=201)
 def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(current_user)):
-    if not payload.worker_confirmed:
+    is_patient = user.get("role") == "patient" or user.get("is_patient") is True or str(user.get("sub")) == str(payload.patient_id)
+    if not is_patient and not payload.worker_confirmed:
         raise HTTPException(status_code=422, detail="Worker must visually verify the displayed reading before saving")
     if payload.systolic_mmhg <= payload.diastolic_mmhg:
         raise HTTPException(status_code=422, detail="Systolic value must exceed diastolic value")
@@ -588,6 +589,9 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
     db = supabase_admin()
     # Check access to patient
     patient = assert_patient_access(db, user["sub"], payload.patient_id, action="bp_write")
+
+    verification_status = "patient_recorded" if is_patient else "worker_verified"
+    recorded_by = None if is_patient else user["sub"]
 
     row = {
         "patient_id": payload.patient_id,
@@ -597,11 +601,11 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
         "device_id": payload.device_id,
         "capture_method": payload.capture_method,
         "ocr_confidence": payload.ocr_confidence,
-        "worker_confirmed": payload.worker_confirmed,
+        "worker_confirmed": payload.worker_confirmed or is_patient,
         "measured_at": payload.measured_at.isoformat(),
         "facility_id": patient["facility_id"],
-        "recorded_by": user["sub"],
-        "verification_status": "worker_verified",
+        "recorded_by": recorded_by,
+        "verification_status": verification_status,
     }
     result = db.table("bp_measurements").insert(row).execute()
     if not result.data:
@@ -623,20 +627,24 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
         except Exception:
             pass
 
-    db.table("audit_logs").insert({
-        "actor_user_id": user["sub"],
-        "facility_id": patient["facility_id"],
-        "action": "bp_measurement_saved",
-        "entity_type": "bp_measurement",
-        "entity_id": measurement["id"],
-        "metadata": {
-            "systolic": payload.systolic_mmhg,
-            "diastolic": payload.diastolic_mmhg,
-            "patient_id": payload.patient_id,
-            "urine_protein": payload.urine_protein,
-            "imminent_symptoms": payload.imminent_symptoms,
-        },
-    }).execute()
+    try:
+        db.table("audit_logs").insert({
+            "actor_user_id": recorded_by,
+            "facility_id": patient["facility_id"],
+            "action": "bp_measurement_saved",
+            "entity_type": "bp_measurement",
+            "entity_id": measurement["id"],
+            "metadata": {
+                "systolic": payload.systolic_mmhg,
+                "diastolic": payload.diastolic_mmhg,
+                "patient_id": payload.patient_id,
+                "urine_protein": payload.urine_protein,
+                "imminent_symptoms": payload.imminent_symptoms,
+                "is_patient": is_patient,
+            },
+        }).execute()
+    except Exception:
+        pass
 
     # Backend alert evaluation:
     # Trigger elevated BP alert when SBP >= 140 OR DBP >= 90 mmHg OR imminent symptoms OR proteinuria
@@ -660,11 +668,20 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
             trigger_parts.append(f"Imminent Symptoms: {', '.join(payload.imminent_symptoms)}")
         trigger_reason = " • ".join(trigger_parts)
 
+        worker_id = user["sub"] if not is_patient else (patient.get("created_by") or user["sub"])
+        if is_patient and not patient.get("created_by"):
+            try:
+                fac_worker = db.table("user_facility_assignments").select("user_id").eq("facility_id", patient["facility_id"]).eq("is_active", True).limit(1).execute().data
+                if fac_worker:
+                    worker_id = fac_worker[0]["user_id"]
+            except Exception:
+                pass
+
         alert_row = {
             "patient_id": str(payload.patient_id),
             "measurement_id": measurement["id"],
             "facility_id": patient["facility_id"],
-            "worker_user_id": user["sub"],
+            "worker_user_id": worker_id,
             "alert_type": "ELEVATED_BP",
             "severity": severity,
             "trigger_reason": trigger_reason,
@@ -675,18 +692,22 @@ def create_bp_measurement(payload: BPMeasurementCreate, user: dict = Depends(cur
         alert_res = db.table("clinical_alerts").insert(alert_row).execute()
         alert_record = alert_res.data[0] if alert_res.data else alert_row
 
-        db.table("audit_logs").insert({
-            "actor_user_id": user["sub"],
-            "facility_id": patient["facility_id"],
-            "action": "clinical_alert_triggered",
-            "entity_type": "clinical_alert",
-            "entity_id": alert_record.get("id"),
-            "metadata": {
-                "severity": severity,
-                "reason": alert_row["trigger_reason"],
-                "measurement_id": measurement["id"],
-            },
-        }).execute()
+        try:
+            db.table("audit_logs").insert({
+                "actor_user_id": None if is_patient else user["sub"],
+                "facility_id": patient["facility_id"],
+                "action": "clinical_alert_triggered",
+                "entity_type": "clinical_alert",
+                "entity_id": alert_record.get("id"),
+                "metadata": {
+                    "severity": severity,
+                    "reason": alert_row["trigger_reason"],
+                    "measurement_id": measurement["id"],
+                    "is_patient_triggered": is_patient,
+                },
+            }).execute()
+        except Exception:
+            pass
 
     return {
         **measurement,

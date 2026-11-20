@@ -59,6 +59,11 @@ class MockQueryBuilder:
         self._filtered = [x for x in self._filtered if str(x.get(field, "")) in val_strs]
         return self
 
+    def ilike(self, field, value):
+        v = str(value).strip("%").lower()
+        self._filtered = [x for x in self._filtered if v in str(x.get(field, "")).lower()]
+        return self
+
     def maybe_single(self):
         self.is_single = True
         return self
@@ -716,6 +721,67 @@ class TestPreeclampsia360BackendIntegration(unittest.TestCase):
         self.assertEqual(ga_2["gestational_age_weeks"], 24)
         self.assertEqual(ga_2["gestational_age_days"], 0)
         self.assertEqual(ga_2["current_gestational_age"], "24 weeks 0 days")
+
+    @patch("app.auth.supabase_admin")
+    @patch("app.main.supabase_admin")
+    def test_patient_login_and_self_monitoring(self, mock_main_db, mock_auth_db):
+        patient_id = str(uuid.uuid4())
+        mock_db = MockDatabase({
+            "patients": [
+                {
+                    "id": patient_id,
+                    "patient_code": "PE360-TESTPATIENT01",
+                    "full_name": "Deepa Sundar",
+                    "facility_id": self.phc_a_id,
+                    "is_active": True,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ],
+            "facilities": [
+                {"id": self.phc_a_id, "name": "Muthialpet PHC", "facility_code": "PY-PHC-MUTH"}
+            ],
+            "bp_measurements": [],
+            "measurement_captures": [],
+            "alerts": [],
+            "audit_logs": [],
+        })
+        mock_auth_db.return_value = mock_db
+        mock_main_db.return_value = mock_db
+
+        # 1. Patient logs in using Patient ID (PE360-TESTPATIENT01)
+        login_res = self.client.post("/api/v1/auth/patient-login", json={"patient_id": "PE360-TESTPATIENT01"})
+        self.assertEqual(login_res.status_code, 200)
+        data = login_res.json()
+        self.assertIn("access_token", data)
+        self.assertEqual(data["user"]["full_name"], "Deepa Sundar")
+        self.assertEqual(data["user"]["role"], "patient")
+        self.assertTrue(data["user"]["is_patient"])
+
+        patient_token = data["access_token"]
+
+        # 2. Patient records self-measurement (Check BP or Manual or OCR)
+        bp_res = self.client.post(
+            "/api/v1/bp/measurements",
+            json={
+                "patient_id": patient_id,
+                "systolic_mmhg": 122,
+                "diastolic_mmhg": 78,
+                "pulse_bpm": 74,
+                "capture_method": "device_sync",
+                "worker_confirmed": False, # Patient does not require worker_confirmed
+                "measured_at": datetime.now(timezone.utc).isoformat(),
+                "imminent_symptoms": [],
+            },
+            headers={"Authorization": f"Bearer {patient_token}"},
+        )
+        self.assertEqual(bp_res.status_code, 201)
+        bp_data = bp_res.json()
+        self.assertEqual(bp_data["verification_status"], "patient_recorded")
+        self.assertFalse(bp_data["alert_triggered"])
+
+        # 3. Patient with unknown ID returns 404
+        bad_login = self.client.post("/api/v1/auth/patient-login", json={"patient_id": "PE360-UNKNOWN99"})
+        self.assertEqual(bad_login.status_code, 404)
 
 if __name__ == "__main__":
     unittest.main()

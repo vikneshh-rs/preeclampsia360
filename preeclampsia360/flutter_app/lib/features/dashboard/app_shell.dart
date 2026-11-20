@@ -3,6 +3,7 @@ import '../../core/api_client.dart';
 import '../../core/theme.dart';
 import '../patients/patient_list_screen.dart';
 import '../patients/patient_registration_screen.dart';
+import '../patients/patient_self_monitoring_view.dart';
 import '../auth/login_screen.dart';
 import '../referrals/referral_screen.dart';
 import '../referrals/stabilize_patient_dialog.dart';
@@ -37,6 +38,10 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> load() async {
+    if (ApiClient.instance.isPatient) {
+      if (mounted) setState(() => loading = false);
+      return;
+    }
     try {
       final r = await ApiClient.instance.get('/api/v1/workspace');
       if (r['profile'] is Map) {
@@ -83,6 +88,9 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (ApiClient.instance.isPatient) {
+      return PatientSelfMonitoringView(onLogout: logout);
+    }
     if (!loading && error == null && isThcUser) {
       return THCWebDashboardView(onLogout: logout);
     }
@@ -1015,7 +1023,56 @@ class _DashboardHomeState extends State<DashboardHome> {
         padding: const EdgeInsets.all(18),
         children: [
           const P360Header('Clinical care overview', subtitle: 'Live maternal surveillance & referral coordination'),
-          const SizedBox(height: 18),
+          const SizedBox(height: 14),
+          // Quick Check BP (Digital Machine Sync) Banner for ANMs & PHCs
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0FDF4),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF86EFAC)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.bluetooth_connected, color: Color(0xFF16A34A), size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Check BP • Machine Auto-Sync',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF15803D)),
+                      ),
+                      Text(
+                        'Digital monitor auto-synchronization (In Development Stage)',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF166534)),
+                      ),
+                    ],
+                  ),
+                ),
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF16A34A),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const BPEntryScreen(initialMethod: 'device_sync')),
+                  ).then((_) => refresh()),
+                  icon: const Icon(Icons.sync, size: 16),
+                  label: const Text('Check BP', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           if (redAlerts.isNotEmpty) ...[
             _buildIncomingRedAlertBanner(redAlerts.first),
             const SizedBox(height: 14),
@@ -1214,6 +1271,13 @@ class _DashboardHomeState extends State<DashboardHome> {
             spacing: 10,
             runSpacing: 10,
             children: [
+              _ActionChip(
+                icon: Icons.bluetooth_connected,
+                label: 'Check BP (Device Sync)',
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BPEntryScreen(initialMethod: 'device_sync')),
+                ).then((_) => refresh()),
+              ),
               _ActionChip(
                 icon: Icons.person_add_alt,
                 label: 'Smart Pregnancy Registration',

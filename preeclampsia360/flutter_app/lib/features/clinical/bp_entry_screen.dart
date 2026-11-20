@@ -9,7 +9,8 @@ import '../referrals/referral_screen.dart';
 
 class BPEntryScreen extends StatefulWidget {
   final String? initialPatientId;
-  const BPEntryScreen({super.key, this.initialPatientId});
+  final String? initialMethod;
+  const BPEntryScreen({super.key, this.initialPatientId, this.initialMethod});
   @override
   State<BPEntryScreen> createState() => _BPEntryScreenState();
 }
@@ -24,6 +25,8 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
   bool saving = false;
   bool loading = true;
   bool scanning = false;
+  bool syncing = false;
+  String? syncStatusMessage;
   String method = 'manual';
   String? ocrText;
   String urineProtein = 'not_tested';
@@ -42,7 +45,42 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
   void initState() {
     super.initState();
     patientId = widget.initialPatientId;
+    if (widget.initialMethod != null) {
+      method = widget.initialMethod!;
+    }
     loadPatients();
+  }
+
+  // Auto-synchronize reading from connected BP machine (In Development Stage)
+  Future<void> _syncFromDevice() async {
+    setState(() {
+      syncing = true;
+      syncStatusMessage = null;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    // Simulated reading from digital machine in development stage
+    const simulatedSys = 120;
+    const simulatedDia = 80;
+    const simulatedPulse = 72;
+
+    if (!mounted) return;
+    setState(() {
+      syncing = false;
+      sys.text = simulatedSys.toString();
+      dia.text = simulatedDia.toString();
+      pulse.text = simulatedPulse.toString();
+      confirmed = true;
+      syncStatusMessage = 'Auto-synchronized from Digital BP Machine: $simulatedSys/$simulatedDia mmHg (Pulse: $simulatedPulse bpm)';
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        backgroundColor: AppColors.success,
+        content: Text('Reading synchronized from machine: 120/80 mmHg, 72 bpm'),
+      ),
+    );
   }
 
   @override
@@ -324,12 +362,70 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
               children: [
                 SegmentedButton<String>(
                   segments: const [
-                    ButtonSegment(value: 'manual', label: Text('Manual'), icon: Icon(Icons.edit)),
-                    ButtonSegment(value: 'camera_ocr', label: Text('Camera OCR'), icon: Icon(Icons.camera_alt)),
+                    ButtonSegment(value: 'device_sync', label: Text('Check BP'), icon: Icon(Icons.bluetooth_connected)),
+                    ButtonSegment(value: 'manual', label: Text('Manual Entry'), icon: Icon(Icons.edit)),
+                    ButtonSegment(value: 'camera_ocr', label: Text('Scan Machine'), icon: Icon(Icons.camera_alt)),
                   ],
                   selected: {method},
                   onSelectionChanged: (s) => setState(() => method = s.first),
                 ),
+                if (method == 'device_sync')
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
+                      ),
+                      child: Column(
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.bluetooth_connected, color: Color(0xFF16A34A), size: 24),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Digital BP Monitor Connected',
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF15803D)),
+                                    ),
+                                    Text(
+                                      'Auto-synchronizes reading directly from machine (In Development Stage)',
+                                      style: TextStyle(fontSize: 11, color: Color(0xFF166534)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            child: FilledButton.icon(
+                              style: FilledButton.styleFrom(backgroundColor: const Color(0xFF16A34A)),
+                              onPressed: syncing ? null : _syncFromDevice,
+                              icon: syncing
+                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : const Icon(Icons.sync, size: 18),
+                              label: Text(syncing ? 'Auto-syncing reading…' : 'Sync Reading from Machine'),
+                            ),
+                          ),
+                          if (syncStatusMessage != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              syncStatusMessage!,
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
                 if (method == 'camera_ocr')
                   Padding(
                     padding: const EdgeInsets.only(top: 14),

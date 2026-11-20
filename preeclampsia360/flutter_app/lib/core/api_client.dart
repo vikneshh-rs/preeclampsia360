@@ -44,8 +44,9 @@ class ApiClient {
     }
   }
   bool get isAuthenticated => _token != null;
-  String? get activeFacilityId => _activeFacilityId ?? (assignments.isNotEmpty ? assignments.first['facility_id']?.toString() : null);
-  String? get activeFacilityName => activeAssignment?['facilities']?['name']?.toString();
+  bool get isPatient => currentUser?['is_patient'] == true || currentUser?['role'] == 'patient';
+  String? get activeFacilityId => _activeFacilityId ?? (assignments.isNotEmpty ? assignments.first['facility_id']?.toString() : currentUser?['facility_id']?.toString());
+  String? get activeFacilityName => activeAssignment?['facilities']?['name']?.toString() ?? currentUser?['facility_name']?.toString();
 
   Map<String, dynamic>? get activeAssignment {
     if (assignments.isEmpty) return null;

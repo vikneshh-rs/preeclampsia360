@@ -1,5 +1,6 @@
 from __future__ import annotations
 import re, time, uuid
+import jwt
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from uuid import UUID
@@ -48,6 +49,110 @@ class ProvisionRequest(BaseModel):
     facility_id: UUID
     role: str
     pin: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+
+class PatientLoginRequest(BaseModel):
+    patient_id: str = Field(min_length=3, max_length=100)
+
+@router.post("/patient-login")
+def patient_login(payload: PatientLoginRequest):
+    code_or_id = payload.patient_id.strip()
+    db = supabase_admin()
+
+    # Look up by patient_code (case-insensitive)
+    res = (
+        db.table("patients")
+        .select("id,patient_code,full_name,facility_id,archived_at,created_at")
+        .ilike("patient_code", code_or_id)
+        .limit(1)
+        .execute()
+    )
+    patient = res.data[0] if res.data else None
+
+    # If not found, try by UUID id
+    if not patient:
+        try:
+            uuid.UUID(code_or_id)
+            res = (
+                db.table("patients")
+                .select("id,patient_code,full_name,facility_id,archived_at,created_at")
+                .eq("id", code_or_id)
+                .limit(1)
+                .execute()
+            )
+            patient = res.data[0] if res.data else None
+        except (ValueError, TypeError):
+            pass
+
+    if not patient:
+        raise HTTPException(
+            status_code=404,
+            detail="Patient ID not found. Please verify your ID provided during PHC registration.",
+        )
+
+    if patient.get("archived_at") is not None:
+        raise HTTPException(status_code=403, detail="Patient record has been archived. Please contact your healthcare worker.")
+
+    now = int(time.time())
+    expires_in = 86400 * 30  # 30-day session
+    secret = settings.supabase_jwt_secret or settings.supabase_service_role_key
+    if not secret:
+        raise HTTPException(status_code=500, detail="Server authentication secret not configured")
+
+    token_payload = {
+        "sub": str(patient["id"]),
+        "aud": settings.supabase_jwt_aud,
+        "iss": f"{settings.supabase_url.rstrip('/')}/auth/v1",
+        "iat": now,
+        "exp": now + expires_in,
+        "role": "patient",
+        "is_patient": True,
+        "patient_code": patient.get("patient_code"),
+        "full_name": patient.get("full_name"),
+        "facility_id": patient.get("facility_id"),
+    }
+    access_token = jwt.encode(token_payload, secret, algorithm="HS256")
+
+    facility_name = "Primary Health Centre"
+    if patient.get("facility_id"):
+        try:
+            fac = (
+                db.table("facilities")
+                .select("name,facility_code")
+                .eq("id", patient["facility_id"])
+                .maybe_single()
+                .execute()
+                .data
+            )
+            if fac and fac.get("name"):
+                facility_name = fac["name"]
+        except Exception:
+            pass
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "expires_in": expires_in,
+        "user": {
+            "id": patient["id"],
+            "patient_code": patient.get("patient_code"),
+            "full_name": patient.get("full_name"),
+            "facility_id": patient.get("facility_id"),
+            "facility_name": facility_name,
+            "role": "patient",
+            "is_patient": True,
+            "assignments": [
+                {
+                    "facility_id": patient.get("facility_id"),
+                    "role": "PATIENT",
+                    "facilities": {
+                        "id": patient.get("facility_id"),
+                        "name": facility_name,
+                        "facility_type": "PHC",
+                    },
+                }
+            ],
+        },
+    }
 
 @router.post("/login")
 def login(payload: LoginRequest, request: Request):

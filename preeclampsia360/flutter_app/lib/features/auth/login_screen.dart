@@ -14,6 +14,8 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final id = TextEditingController();
   final pin = TextEditingController();
+  final patientIdCtrl = TextEditingController();
+  bool isPatientLogin = false;
   bool busy = false;
   bool hide = true;
 
@@ -21,7 +23,52 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     id.dispose();
     pin.dispose();
+    patientIdCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> submitPatientLogin() async {
+    final pId = patientIdCtrl.text.trim().toUpperCase();
+    if (pId.isEmpty) {
+      showMessage(context, 'Please enter your Patient ID (e.g. PE360-xxxxxx).', error: true);
+      return;
+    }
+
+    setState(() => busy = true);
+    try {
+      final data = await ApiClient.instance.post(
+        '/api/v1/auth/patient-login',
+        {'patient_id': pId},
+      );
+      await ApiClient.instance.setSession(Map<String, dynamic>.from(data));
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const AppShell()),
+      );
+    } catch (e) {
+      if (mounted) {
+        final errText = e.toString();
+        if (errText.contains('Cannot reach')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppColors.critical,
+              duration: const Duration(seconds: 8),
+              content: const Text('Cannot reach server. Verify connection and check Server URL.'),
+              action: SnackBarAction(
+                label: 'Configure URL',
+                textColor: Colors.white,
+                onPressed: _showServerUrlDialog,
+              ),
+            ),
+          );
+        } else {
+          showMessage(context, errText, error: true);
+        }
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   Future<void> submit() async {
@@ -193,7 +240,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
                     onPressed: () async {
                       await ApiClient.instance.setBaseUrl(urlCtrl.text.trim());
-                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
                       if (!mounted) return;
                       setState(() {});
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -347,9 +395,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         onPressed: _showServerUrlDialog,
                         icon: const Icon(Icons.dns_rounded, size: 14, color: AppColors.crimson),
-                        label: Text(
-                          ApiClient.instance.baseUrl.replaceAll('http://', '').replaceAll(':8000', ''),
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        label: const Text(
+                          'Server URL',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
@@ -367,59 +415,137 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Maternal Monitoring & Care Coordination',
                     style: TextStyle(color: AppColors.muted),
                   ),
-                  const SizedBox(height: 36),
-                  const P360Card(
-                    child: Text(
-                      'Healthcare Worker Login',
-                      style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: id,
-                    textCapitalization: TextCapitalization.characters,
-                    inputFormatters: [HealthcareWorkerIdInputFormatter()],
-                    decoration: const InputDecoration(
-                      labelText: 'Healthcare Worker ID',
-                      prefixIcon: Icon(Icons.badge_outlined),
-                      hintText: 'e.g. PY-PHC-ANM-MUTH or PY-PHC-MUTH',
-                      helperText: 'Hyphens (-) auto-fill as you type your PHC or ANM area code',
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: pin,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    obscureText: hide,
-                    decoration: InputDecoration(
-                      labelText: '6-digit PIN',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      counterText: '',
-                      suffixIcon: IconButton(
-                        onPressed: () => setState(() => hide = !hide),
-                        icon: Icon(hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                  const SizedBox(height: 28),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment<bool>(
+                        value: false,
+                        label: Text('Staff Login', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        icon: Icon(Icons.badge_outlined, size: 18),
                       ),
-                    ),
+                      ButtonSegment<bool>(
+                        value: true,
+                        label: Text('Patient Login', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        icon: Icon(Icons.pregnant_woman, size: 18),
+                      ),
+                    ],
+                    selected: {isPatientLogin},
+                    onSelectionChanged: (s) => setState(() => isPatientLogin = s.first),
                   ),
                   const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: busy ? null : submit,
-                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
-                    child: busy
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                          )
-                        : const Text('Sign In'),
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'No email or phone number required. Contact your facility administrator for account support.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: AppColors.muted, fontSize: 12),
-                  ),
+                  if (!isPatientLogin) ...[
+                    const P360Card(
+                      child: Text(
+                        'Healthcare Worker Login',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: id,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [HealthcareWorkerIdInputFormatter()],
+                      decoration: const InputDecoration(
+                        labelText: 'Healthcare Worker ID',
+                        prefixIcon: Icon(Icons.badge_outlined),
+                        hintText: 'e.g. PY-PHC-ANM-MUTH or PY-PHC-MUTH',
+                        helperText: 'Hyphens (-) auto-fill as you type your PHC or ANM area code',
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: pin,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      obscureText: hide,
+                      decoration: InputDecoration(
+                        labelText: '6-digit PIN',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        counterText: '',
+                        suffixIcon: IconButton(
+                          onPressed: () => setState(() => hide = !hide),
+                          icon: Icon(hide ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton(
+                      onPressed: busy ? null : submit,
+                      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(54)),
+                      child: busy
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Text('Sign In'),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'No email or phone number required. Contact your facility administrator for account support.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.muted, fontSize: 12),
+                    ),
+                  ] else ...[
+                    Card(
+                      elevation: 0,
+                      color: AppColors.paleRose,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Patient Self-Monitoring Login',
+                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.crimson),
+                            ),
+                            SizedBox(height: 4),
+                            Text(
+                              'Enter the unique Patient ID assigned to you during registration at your PHC or by your ANM.',
+                              style: TextStyle(fontSize: 12, color: AppColors.ink),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: patientIdCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: const InputDecoration(
+                        labelText: 'Patient ID *',
+                        prefixIcon: Icon(Icons.badge_outlined),
+                        hintText: 'e.g. PE360-B635ACA278',
+                        helperText: 'Case-insensitive. No password or PIN required.',
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    FilledButton.icon(
+                      onPressed: busy ? null : submitPatientLogin,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.crimson,
+                        minimumSize: const Size.fromHeight(54),
+                      ),
+                      icon: busy
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.login_rounded),
+                      label: Text(
+                        busy ? 'Signing in…' : 'Sign In as Patient',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'If you do not have your Patient ID, please ask your Village Health Nurse (ANM) or PHC.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppColors.muted, fontSize: 12),
+                    ),
+                  ],
                 ],
               ),
             ),

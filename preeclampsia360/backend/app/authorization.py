@@ -95,6 +95,11 @@ def assert_patient_access(
     patient = patient_res.data
     patient_facility_id = patient["facility_id"]
 
+    # 0. Patient self-access
+    if str(user_id) == str(patient_id):
+        _log_patient_audit(db, user_id, patient, action, "patient_self_access", log_audit)
+        return patient
+
     assignments = get_user_assignments(db, user_id)
     if not assignments:
         raise HTTPException(status_code=403, detail="No active facility assignment found")
@@ -136,8 +141,10 @@ def _log_patient_audit(db: Client, user_id: str, patient: dict[str, Any], action
     if not should_log:
         return
     try:
+        is_self_patient = str(user_id) == str(patient.get("id"))
+        actor_id = None if is_self_patient else user_id
         db.table("audit_logs").insert({
-            "actor_user_id": user_id,
+            "actor_user_id": actor_id,
             "facility_id": patient.get("facility_id"),
             "action": f"patient_{action}",
             "entity_type": "patient",
@@ -145,6 +152,7 @@ def _log_patient_audit(db: Client, user_id: str, patient: dict[str, Any], action
             "metadata": {
                 "patient_code": patient.get("patient_code"),
                 "grant_reason": grant_reason,
+                "is_self_patient": is_self_patient,
             },
         }).execute()
     except Exception:
