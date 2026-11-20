@@ -29,6 +29,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
+    allow_origin_regex=r"^https:\/\/.*\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Facility-ID"],
@@ -42,6 +43,7 @@ app.include_router(trends_router)
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 
+@app.get("/", response_class=HTMLResponse)
 @app.get("/thc", response_class=HTMLResponse)
 @app.get("/thc/dashboard", response_class=HTMLResponse)
 def serve_thc_dashboard():
