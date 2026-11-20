@@ -52,10 +52,162 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(builder: (_) => const AppShell()),
       );
     } catch (e) {
-      if (mounted) showMessage(context, e.toString(), error: true);
+      if (mounted) {
+        final errText = e.toString();
+        if (errText.contains('Cannot reach')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: AppColors.critical,
+              duration: const Duration(seconds: 8),
+              content: const Text('Cannot reach server. Verify PC server is running and check Server URL.'),
+              action: SnackBarAction(
+                label: 'Configure URL',
+                textColor: Colors.white,
+                onPressed: _showServerUrlDialog,
+              ),
+            ),
+          );
+        } else {
+          showMessage(context, errText, error: true);
+        }
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
+  }
+
+  Future<void> _showServerUrlDialog() async {
+    final urlCtrl = TextEditingController(text: ApiClient.instance.baseUrl);
+    bool testing = false;
+    String? testResult;
+    bool? testSuccess;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.dns_rounded, color: AppColors.crimson, size: 22),
+                  SizedBox(width: 8),
+                  Text('Server API URL', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                ],
+              ),
+              content: SizedBox(
+                width: 440,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Enter the IP address of your host PC running the backend server. Make sure your phone and PC are connected to the same Wi-Fi network.',
+                      style: TextStyle(fontSize: 12, color: AppColors.muted),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: urlCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'API Base URL',
+                        hintText: 'https://preeclampsia360-api.onrender.com',
+                        prefixIcon: Icon(Icons.link),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Quick Presets:', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.ink)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        ActionChip(
+                          avatar: const Icon(Icons.cloud_done, size: 14, color: AppColors.crimson),
+                          label: const Text('Render Cloud (Live)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                          onPressed: () => setDialogState(() => urlCtrl.text = 'https://preeclampsia360-api.onrender.com'),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.wifi, size: 14),
+                          label: const Text('Wi-Fi LAN (192.168.1.8)', style: TextStyle(fontSize: 11)),
+                          onPressed: () => setDialogState(() => urlCtrl.text = 'http://192.168.1.8:8000'),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.phone_android, size: 14),
+                          label: const Text('Emulator (10.0.2.2)', style: TextStyle(fontSize: 11)),
+                          onPressed: () => setDialogState(() => urlCtrl.text = 'http://10.0.2.2:8000'),
+                        ),
+                        ActionChip(
+                          avatar: const Icon(Icons.laptop, size: 14),
+                          label: const Text('Localhost (127.0.0.1)', style: TextStyle(fontSize: 11)),
+                          onPressed: () => setDialogState(() => urlCtrl.text = 'http://127.0.0.1:8000'),
+                        ),
+                      ],
+                    ),
+                    if (testResult != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: testSuccess == true ? const Color(0xFFDCFCE7) : const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: testSuccess == true ? const Color(0xFF86EFAC) : const Color(0xFFFECDD3)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(testSuccess == true ? Icons.check_circle : Icons.error, color: testSuccess == true ? const Color(0xFF16A34A) : AppColors.critical, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(child: Text(testResult!, style: TextStyle(fontSize: 11, color: testSuccess == true ? const Color(0xFF166534) : AppColors.critical, fontWeight: FontWeight.bold))),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                OutlinedButton(
+                  onPressed: testing
+                      ? null
+                      : () async {
+                          setDialogState(() {
+                            testing = true;
+                            testResult = 'Testing connection...';
+                            testSuccess = null;
+                          });
+                          final ok = await ApiClient.instance.testConnection(urlCtrl.text.trim());
+                          setDialogState(() {
+                            testing = false;
+                            testSuccess = ok;
+                            testResult = ok ? 'Connected successfully! (HTTP 200 OK)' : 'Failed to reach server at this URL.';
+                          });
+                        },
+                  child: testing
+                      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Test Connection'),
+                ),
+                  FilledButton(
+                    style: FilledButton.styleFrom(backgroundColor: AppColors.crimson),
+                    onPressed: () async {
+                      await ApiClient.instance.setBaseUrl(urlCtrl.text.trim());
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      if (!mounted) return;
+                      setState(() {});
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Server URL updated to ${ApiClient.instance.baseUrl}')),
+                      );
+                    },
+                    child: const Text('Save & Apply'),
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showChangePinDialog(String loginId, String currentPin) async {
@@ -169,19 +321,38 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: 30),
-                  Container(
-                    height: 76,
-                    width: 76,
-                    decoration: BoxDecoration(
-                      color: AppColors.paleRose,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: const Icon(
-                      Icons.pregnant_woman_rounded,
-                      color: AppColors.crimson,
-                      size: 42,
-                    ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        height: 72,
+                        width: 72,
+                        decoration: BoxDecoration(
+                          color: AppColors.paleRose,
+                          borderRadius: BorderRadius.circular(22),
+                        ),
+                        child: const Icon(
+                          Icons.pregnant_woman_rounded,
+                          color: AppColors.crimson,
+                          size: 40,
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF475569),
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: _showServerUrlDialog,
+                        icon: const Icon(Icons.dns_rounded, size: 14, color: AppColors.crimson),
+                        label: Text(
+                          ApiClient.instance.baseUrl.replaceAll('http://', '').replaceAll(':8000', ''),
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 24),
                   Text(

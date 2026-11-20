@@ -14,7 +14,8 @@ class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
   static const _storage = FlutterSecureStorage();
-  static const _baseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://127.0.0.1:8000');
+  static const _defaultBaseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'https://preeclampsia360-api.onrender.com');
+  String _customBaseUrl = _defaultBaseUrl;
 
   String? _token;
   String? _refreshToken;
@@ -22,7 +23,26 @@ class ApiClient {
   Map<String, dynamic>? currentUser;
   List<dynamic> assignments = [];
 
-  String get baseUrl => _baseUrl;
+  String get baseUrl => _customBaseUrl;
+
+  Future<void> setBaseUrl(String url) async {
+    String clean = url.trim();
+    while (clean.endsWith('/')) {
+      clean = clean.substring(0, clean.length - 1);
+    }
+    _customBaseUrl = clean;
+    await _storage.write(key: 'custom_api_base_url', value: _customBaseUrl);
+  }
+
+  Future<bool> testConnection([String? testUrl]) async {
+    final target = (testUrl != null && testUrl.trim().isNotEmpty) ? testUrl.trim() : baseUrl;
+    try {
+      final res = await http.get(Uri.parse('$target/health')).timeout(const Duration(seconds: 4));
+      return res.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
   bool get isAuthenticated => _token != null;
   String? get activeFacilityId => _activeFacilityId ?? (assignments.isNotEmpty ? assignments.first['facility_id']?.toString() : null);
   String? get activeFacilityName => activeAssignment?['facilities']?['name']?.toString();
@@ -44,6 +64,10 @@ class ApiClient {
   }
 
   Future<void> restore() async {
+    final savedUrl = await _storage.read(key: 'custom_api_base_url');
+    if (savedUrl != null && savedUrl.trim().isNotEmpty) {
+      _customBaseUrl = savedUrl.trim();
+    }
     _token = await _storage.read(key: 'access_token');
     _refreshToken = await _storage.read(key: 'refresh_token');
     final userRaw = await _storage.read(key: 'current_user');
@@ -86,7 +110,7 @@ class ApiClient {
   Future<bool> refreshToken() async {
     if (_refreshToken == null) return false;
     try {
-      final uri = Uri.parse('$_baseUrl/api/v1/auth/refresh');
+      final uri = Uri.parse('$baseUrl/api/v1/auth/refresh');
       final res = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
@@ -115,7 +139,7 @@ class ApiClient {
   Future<dynamic> delete(String path) => _request('DELETE', path);
 
   Future<dynamic> _request(String method, String path, {Map<String, dynamic>? body, bool retryOnAuth = true}) async {
-    final uri = Uri.parse('$_baseUrl$path');
+    final uri = Uri.parse('$baseUrl$path');
     final headers = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
