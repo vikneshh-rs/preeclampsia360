@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../core/api_client.dart';
+import '../../core/bp_ocr_parser.dart';
 import '../../core/theme.dart';
 import '../../shared/ui.dart';
 
@@ -26,6 +27,10 @@ class _PatientSelfMonitoringViewState extends State<PatientSelfMonitoringView> {
   bool _syncing = false;
   bool _scanning = false;
   String? _syncStatusMessage;
+  List<int> _detectedNumbers = [];
+  String? _ocrStatusMessage;
+  BpOcrResult? _ocrResult;
+  String? _ocrRawText;
 
   static const List<Map<String, String>> _kSymptomsList = [
     {
@@ -100,35 +105,118 @@ class _PatientSelfMonitoringViewState extends State<PatientSelfMonitoringView> {
   }
 
   // Camera OCR for "Scan Machine"
-  Future<void> _scanMonitorDisplay() async {
+  Future<void> _promptImageSource(BuildContext context) async {
+    if (kIsWeb) {
+      await _scanMonitorDisplay(source: ImageSource.gallery);
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Scan BP Machine Display',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.deepBurgundy),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Point camera straight at the numbers. Ensure good lighting.',
+                style: TextStyle(fontSize: 12, color: AppColors.slate),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.paleRose,
+                  child: Icon(Icons.camera_alt, color: AppColors.deepBurgundy),
+                ),
+                title: const Text('Take Photo with Camera', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Directly snap the BP machine screen'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _scanMonitorDisplay(source: ImageSource.camera);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.paleRose,
+                  child: Icon(Icons.photo_library, color: AppColors.deepBurgundy),
+                ),
+                title: const Text('Choose from Gallery', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Select a high-resolution photo'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _scanMonitorDisplay(source: ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _scanMonitorDisplay({ImageSource source = ImageSource.camera}) async {
     if (kIsWeb) {
       showMessage(context, 'Web camera scan not supported in browser. Please enter manually or use Check BP.');
       return;
     }
 
-    setState(() => _scanning = true);
+    setState(() {
+      _scanning = true;
+      _ocrStatusMessage = null;
+    });
+
     try {
-      final image = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 90);
+      final image = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 95,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
       if (image == null) return;
       final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
       try {
         final result = await recognizer.processImage(InputImage.fromFilePath(image.path));
-        final text = result.text;
+        final parsed = BpOcrParser.parseRecognizedText(result);
 
-        int? extract(String label) {
-          final m = RegExp('(?:$label)[^0-9]{0,18}(\\d{2,3})', caseSensitive: false).firstMatch(text);
-          return m == null ? null : int.tryParse(m.group(1)!);
-        }
+        if (!mounted) return;
+        setState(() {
+          _ocrRawText = parsed.rawText;
+          _detectedNumbers = parsed.detectedNumbers;
+          _ocrResult = parsed;
 
-        final s = extract('SYS');
-        final d = extract('DIA');
-        final p = extract('PULSE');
-        if (s != null) _sysCtrl.text = s.toString();
-        if (d != null) _diaCtrl.text = d.toString();
-        if (p != null) _pulseCtrl.text = p.toString();
+          if (parsed.systolic != null) _sysCtrl.text = parsed.systolic.toString();
+          if (parsed.diastolic != null) _diaCtrl.text = parsed.diastolic.toString();
+          if (parsed.pulse != null) _pulseCtrl.text = parsed.pulse.toString();
 
-        if (mounted) {
-          showMessage(context, 'Monitor display scanned. Verify readings before saving.');
+          if (parsed.isComplete) {
+            _ocrStatusMessage =
+                'Auto-filled: ${parsed.systolic}/${parsed.diastolic} mmHg${parsed.pulse != null ? ' (Pulse: ${parsed.pulse} bpm)' : ''}';
+          } else if (parsed.detectedNumbers.isNotEmpty) {
+            _ocrStatusMessage =
+                'Detected numbers: ${parsed.detectedNumbers.join(', ')}. Tap below to assign.';
+          } else {
+            _ocrStatusMessage =
+                'Could not identify clear numbers. Please ensure good lighting and retake.';
+          }
+        });
+
+        if (parsed.isComplete) {
+          showMessage(context, 'Auto-filled: ${parsed.systolic}/${parsed.diastolic} mmHg. Please verify before saving.');
+        } else if (parsed.detectedNumbers.isNotEmpty) {
+          showMessage(context, 'Detected numbers: ${parsed.detectedNumbers.join(", ")}. Tap chips to assign.');
+        } else {
+          showMessage(context, 'Could not read digits. Try holding camera steady without glare.', error: true);
         }
       } finally {
         await recognizer.close();
@@ -138,6 +226,58 @@ class _PatientSelfMonitoringViewState extends State<PatientSelfMonitoringView> {
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
+  }
+
+  void _assignValueToField(int val) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Assign Value "$val" To:',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.deepBurgundy),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.arrow_upward, color: AppColors.deepBurgundy),
+                title: const Text('Systolic (SYS) mmHg', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Current: ${_sysCtrl.text.isEmpty ? "(empty)" : _sysCtrl.text}'),
+                onTap: () {
+                  setState(() => _sysCtrl.text = val.toString());
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.arrow_downward, color: AppColors.deepBurgundy),
+                title: const Text('Diastolic (DIA) mmHg', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Current: ${_diaCtrl.text.isEmpty ? "(empty)" : _diaCtrl.text}'),
+                onTap: () {
+                  setState(() => _diaCtrl.text = val.toString());
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.favorite, color: AppColors.alertRed),
+                title: const Text('Pulse (bpm)', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Current: ${_pulseCtrl.text.isEmpty ? "(empty)" : _pulseCtrl.text}'),
+                onTap: () {
+                  setState(() => _pulseCtrl.text = val.toString());
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _saveMeasurement() async {
@@ -516,27 +656,154 @@ class _PatientSelfMonitoringViewState extends State<PatientSelfMonitoringView> {
                         ],
                       ),
                       const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFF2563EB)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Color(0xFF2563EB)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                              onPressed: _scanning ? null : () => _promptImageSource(context),
+                              icon: _scanning
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : const Icon(Icons.camera_alt, color: Color(0xFF2563EB), size: 20),
+                              label: Text(
+                                _scanning ? 'Reading display…' : 'Capture Machine Photo',
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                              ),
+                            ),
                           ),
-                          onPressed: _scanning ? null : _scanMonitorDisplay,
-                          icon: _scanning
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.camera_alt, color: Color(0xFF2563EB), size: 20),
-                          label: Text(
-                            _scanning ? 'Reading display…' : 'Capture Machine Photo',
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            tooltip: 'Choose from Gallery',
+                            icon: const Icon(Icons.photo_library_outlined, color: Color(0xFF2563EB)),
+                            onPressed: _scanning ? null : () => _scanMonitorDisplay(source: ImageSource.gallery),
+                          ),
+                        ],
+                      ),
+                      if (_ocrStatusMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: (_ocrResult?.isComplete ?? false)
+                                  ? const Color(0xFFF0FDF4)
+                                  : const Color(0xFFFFFBEB),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: (_ocrResult?.isComplete ?? false)
+                                    ? const Color(0xFFBBF7D0)
+                                    : const Color(0xFFFDE68A),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  (_ocrResult?.isComplete ?? false)
+                                      ? Icons.check_circle_rounded
+                                      : Icons.info_outline_rounded,
+                                  size: 16,
+                                  color: (_ocrResult?.isComplete ?? false)
+                                      ? const Color(0xFF16A34A)
+                                      : const Color(0xFFD97706),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    _ocrStatusMessage!,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: (_ocrResult?.isComplete ?? false)
+                                          ? const Color(0xFF15803D)
+                                          : const Color(0xFFB45309),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
+                      if (_detectedNumbers.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Detected numbers (tap to assign):',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF1E40AF)),
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                children: _detectedNumbers.map((val) {
+                                  final isSys = _sysCtrl.text == val.toString();
+                                  final isDia = _diaCtrl.text == val.toString();
+                                  final isPulse = _pulseCtrl.text == val.toString();
+                                  return ActionChip(
+                                    avatar: Icon(
+                                      isSys
+                                          ? Icons.arrow_upward
+                                          : (isDia
+                                              ? Icons.arrow_downward
+                                              : (isPulse ? Icons.favorite : Icons.touch_app)),
+                                      size: 14,
+                                      color: (isSys || isDia || isPulse) ? Colors.white : const Color(0xFF2563EB),
+                                    ),
+                                    backgroundColor: (isSys || isDia || isPulse)
+                                        ? const Color(0xFF2563EB)
+                                        : const Color(0xFFDBEAFE),
+                                    label: Text(
+                                      '$val${isSys ? " (SYS)" : (isDia ? " (DIA)" : (isPulse ? " (PULSE)" : ""))}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: (isSys || isDia || isPulse) ? Colors.white : const Color(0xFF1E40AF),
+                                      ),
+                                    ),
+                                    onPressed: () => _assignValueToField(val),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (_ocrRawText != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Raw display text detected:',
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _ocrRawText!,
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF334155)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

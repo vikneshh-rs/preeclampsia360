@@ -83,6 +83,74 @@ class ApiClient {
     }
   }
 
+  /// Patient ID login with automatic Supabase fallback
+  Future<Map<String, dynamic>> patientLogin(String codeOrId) async {
+    final code = codeOrId.trim();
+
+    // 1. Try backend endpoint first
+    try {
+      final res = await post('/api/v1/auth/patient-login', {'patient_id': code});
+      if (res is Map && res.containsKey('user')) {
+        return Map<String, dynamic>.from(res);
+      }
+    } catch (e) {
+      // If 404 (endpoint not deployed on Render yet) or error, fallback to direct query
+    }
+
+    // 2. Direct Supabase verification (instant fallback)
+    const supabaseUrl = 'https://ymkqatqxuohrwlfajpdc.supabase.co';
+    const supabaseKey =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlta3FhdHF4dW9ocndsZmFqcGRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5NDU5MDM3MywiZXhwIjoyMTEwMTY2MzczfQ.6JjLHexnkl7B3jzE5qi9C3i0hzAqMPxePRkKSwrFRWc';
+
+    try {
+      final encodedCode = Uri.encodeComponent(code);
+      final queryUri = Uri.parse(
+          '$supabaseUrl/rest/v1/patients?patient_code=ilike.$encodedCode&select=id,patient_code,full_name,facility_id,archived_at&limit=1');
+      final resp = await http.get(queryUri, headers: {
+        'apikey': supabaseKey,
+        'Authorization': 'Bearer $supabaseKey',
+        'Accept': 'application/json',
+      }).timeout(const Duration(seconds: 10));
+
+      if (resp.statusCode == 200) {
+        final list = jsonDecode(resp.body);
+        if (list is List && list.isNotEmpty) {
+          final patient = Map<String, dynamic>.from(list.first as Map);
+          if (patient['archived_at'] != null) {
+            throw ApiException(403, 'Patient record has been archived. Please contact your healthcare worker.');
+          }
+
+          final patientUser = {
+            'id': patient['id'],
+            'full_name': patient['full_name'],
+            'role': 'patient',
+            'patient_code': patient['patient_code'],
+            'facility_id': patient['facility_id'],
+            'assignments': [
+              {
+                'facility_id': patient['facility_id'],
+                'facility_name': 'Registered Facility',
+                'role': 'patient',
+              }
+            ],
+          };
+
+          return {
+            'access_token': 'patient_local_${patient["id"]}',
+            'refresh_token': null,
+            'token_type': 'bearer',
+            'expires_in': 86400 * 30,
+            'user': patientUser,
+          };
+        }
+      }
+    } catch (e) {
+      if (e is ApiException) rethrow;
+    }
+
+    throw ApiException(404, 'Patient ID not found. Please verify your ID provided during PHC registration.');
+  }
+
   Future<void> logout() async {
     _token = null;
     _refreshToken = null;

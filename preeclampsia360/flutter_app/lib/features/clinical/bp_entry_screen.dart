@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import '../../core/api_client.dart';
+import '../../core/bp_ocr_parser.dart';
 import '../../core/theme.dart';
 import '../../shared/ui.dart';
 import '../referrals/referral_screen.dart';
@@ -29,6 +30,9 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
   String? syncStatusMessage;
   String method = 'manual';
   String? ocrText;
+  List<int> _detectedNumbers = [];
+  BpOcrResult? _ocrResult;
+  String? _ocrStatusMessage;
   String urineProtein = 'not_tested';
   final Set<String> imminentSymptoms = {};
 
@@ -104,43 +108,136 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
     }
   }
 
-  Future<void> scanDisplay() async {
+  Future<void> _promptImageSource(BuildContext context) async {
+    if (kIsWeb) {
+      await scanDisplay(source: ImageSource.gallery);
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Capture BP Monitor Display',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.deepBurgundy),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Ensure clear lighting and avoid screen reflections for best OCR results.',
+                style: TextStyle(fontSize: 12, color: AppColors.slate),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.paleRose,
+                  child: Icon(Icons.camera_alt, color: AppColors.deepBurgundy),
+                ),
+                title: const Text('Take Photo with Camera', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Directly snap the BP machine screen'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  scanDisplay(source: ImageSource.camera);
+                },
+              ),
+              const Divider(),
+              ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.paleRose,
+                  child: Icon(Icons.photo_library, color: AppColors.deepBurgundy),
+                ),
+                title: const Text('Choose from Gallery', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Select a high-resolution saved photo'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  scanDisplay(source: ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> scanDisplay({ImageSource source = ImageSource.camera}) async {
     if (kIsWeb) {
       try {
-        final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 90);
+        final image = await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 95);
         if (image == null || !mounted) return;
-        showMessage(context, 'Image picked. For competition evaluation, select a sample monitor preset or enter readings.');
+        showMessage(context, 'Image selected on web. For full camera recognition, run on Android mobile.');
       } catch (e) {
         if (mounted) showMessage(context, 'Image capture on web: $e', error: true);
       }
       return;
     }
 
-    setState(() => scanning = true);
+    setState(() {
+      scanning = true;
+      _ocrStatusMessage = null;
+    });
+
     try {
-      final image = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 90);
+      final image = await ImagePicker().pickImage(
+        source: source,
+        imageQuality: 95,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
       if (image == null) return;
       final recognizer = TextRecognizer(script: TextRecognitionScript.latin);
       try {
         final result = await recognizer.processImage(InputImage.fromFilePath(image.path));
-        final text = result.text;
-        ocrText = text;
+        final parsed = BpOcrParser.parseRecognizedText(result);
 
-        int? extract(String label) {
-          final m = RegExp('(?:$label)[^0-9]{0,18}(\\d{2,3})', caseSensitive: false).firstMatch(text);
-          return m == null ? null : int.tryParse(m.group(1)!);
-        }
+        if (!mounted) return;
+        setState(() {
+          ocrText = parsed.rawText;
+          _detectedNumbers = parsed.detectedNumbers;
+          _ocrResult = parsed;
 
-        final s = extract('SYS');
-        final d = extract('DIA');
-        final p = extract('PULSE');
-        if (s != null) sys.text = s.toString();
-        if (d != null) dia.text = d.toString();
-        if (p != null) pulse.text = p.toString();
+          if (parsed.systolic != null) sys.text = parsed.systolic.toString();
+          if (parsed.diastolic != null) dia.text = parsed.diastolic.toString();
+          if (parsed.pulse != null) pulse.text = parsed.pulse.toString();
 
-        if (mounted) {
-          setState(() => confirmed = false);
-          showMessage(context, 'OCR suggestions extracted. Verify every value against the device before saving.');
+          if (parsed.isComplete) {
+            _ocrStatusMessage =
+                'Auto-filled: ${parsed.systolic}/${parsed.diastolic} mmHg${parsed.pulse != null ? ' (Pulse: ${parsed.pulse} bpm)' : ''}';
+            confirmed = false;
+          } else if (parsed.detectedNumbers.isNotEmpty) {
+            _ocrStatusMessage =
+                'Detected numbers: ${parsed.detectedNumbers.join(', ')}. Tap any number below to assign.';
+            confirmed = false;
+          } else {
+            _ocrStatusMessage =
+                'No clear BP values detected. Please hold camera closer and avoid glare.';
+          }
+        });
+
+        if (parsed.isComplete) {
+          showMessage(
+            context,
+            'Auto-filled: ${parsed.systolic}/${parsed.diastolic} mmHg. Verify with monitor before saving.',
+          );
+        } else if (parsed.detectedNumbers.isNotEmpty) {
+          showMessage(
+            context,
+            'Numbers detected (${parsed.detectedNumbers.join(", ")}). Tap chips to assign.',
+          );
+        } else {
+          showMessage(
+            context,
+            'Could not extract readings. Please check lighting or enter manually.',
+            error: true,
+          );
         }
       } finally {
         await recognizer.close();
@@ -150,6 +247,58 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
     } finally {
       if (mounted) setState(() => scanning = false);
     }
+  }
+
+  void _assignValueToField(int val) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Assign Value "$val" To:',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.deepBurgundy),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.arrow_upward, color: AppColors.deepBurgundy),
+                title: const Text('Systolic (SYS) mmHg', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Current value: ${sys.text.isEmpty ? "(empty)" : sys.text}'),
+                onTap: () {
+                  setState(() => sys.text = val.toString());
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.arrow_downward, color: AppColors.deepBurgundy),
+                title: const Text('Diastolic (DIA) mmHg', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Current value: ${dia.text.isEmpty ? "(empty)" : dia.text}'),
+                onTap: () {
+                  setState(() => dia.text = val.toString());
+                  Navigator.pop(ctx);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.favorite, color: AppColors.alertRed),
+                title: const Text('Pulse (Heart Rate) bpm', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Current value: ${pulse.text.isEmpty ? "(empty)" : pulse.text}'),
+                onTap: () {
+                  setState(() => pulse.text = val.toString());
+                  Navigator.pop(ctx);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   void _loadDemoValues(
@@ -436,12 +585,17 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                           children: [
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: scanning ? null : scanDisplay,
+                                onPressed: scanning ? null : () => _promptImageSource(context),
                                 icon: const Icon(Icons.camera_alt),
                                 label: Text(scanning ? 'Reading display…' : 'Capture BP Display'),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              tooltip: 'Choose from Gallery',
+                              icon: const Icon(Icons.photo_library_outlined, color: AppColors.deepBurgundy),
+                              onPressed: scanning ? null : () => scanDisplay(source: ImageSource.gallery),
+                            ),
                             PopupMenuButton<String>(
                               tooltip: 'Load Sample Monitor Reading',
                               icon: const Icon(Icons.science_outlined),
@@ -471,6 +625,95 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                             ),
                           ],
                         ),
+                        if (_ocrStatusMessage != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: (_ocrResult?.isComplete ?? false)
+                                    ? const Color(0xFFF0FDF4)
+                                    : const Color(0xFFFFFBEB),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: (_ocrResult?.isComplete ?? false)
+                                      ? const Color(0xFFBBF7D0)
+                                      : const Color(0xFFFDE68A),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    (_ocrResult?.isComplete ?? false)
+                                        ? Icons.check_circle_rounded
+                                        : Icons.info_outline_rounded,
+                                    size: 16,
+                                    color: (_ocrResult?.isComplete ?? false)
+                                        ? const Color(0xFF16A34A)
+                                        : const Color(0xFFD97706),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _ocrStatusMessage!,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: (_ocrResult?.isComplete ?? false)
+                                            ? const Color(0xFF15803D)
+                                            : const Color(0xFFB45309),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (_detectedNumbers.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Detected numbers on screen (tap to assign):',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppColors.slate),
+                                ),
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 6,
+                                  children: _detectedNumbers.map((val) {
+                                    final isSys = sys.text == val.toString();
+                                    final isDia = dia.text == val.toString();
+                                    final isPulse = pulse.text == val.toString();
+                                    return ActionChip(
+                                      avatar: Icon(
+                                        isSys
+                                            ? Icons.arrow_upward
+                                            : (isDia
+                                                ? Icons.arrow_downward
+                                                : (isPulse ? Icons.favorite : Icons.touch_app)),
+                                        size: 14,
+                                        color: (isSys || isDia || isPulse) ? Colors.white : AppColors.deepBurgundy,
+                                      ),
+                                      backgroundColor:
+                                          (isSys || isDia || isPulse) ? AppColors.deepBurgundy : AppColors.softBlush,
+                                      label: Text(
+                                        '$val${isSys ? " (SYS)" : (isDia ? " (DIA)" : (isPulse ? " (PULSE)" : ""))}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: (isSys || isDia || isPulse) ? Colors.white : AppColors.deepBurgundy,
+                                        ),
+                                      ),
+                                      onPressed: () => _assignValueToField(val),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ),
+                          ),
                         if (ocrText != null)
                           Padding(
                             padding: const EdgeInsets.only(top: 8),
@@ -480,11 +723,21 @@ class _BPEntryScreenState extends State<BPEntryScreen> {
                                 color: AppColors.paleRose,
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Text(
-                                ocrText!,
-                                maxLines: 4,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11, color: AppColors.ink),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Raw display text detected:',
+                                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: AppColors.slate),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    ocrText!,
+                                    maxLines: 4,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 11, color: AppColors.ink),
+                                  ),
+                                ],
                               ),
                             ),
                           ),

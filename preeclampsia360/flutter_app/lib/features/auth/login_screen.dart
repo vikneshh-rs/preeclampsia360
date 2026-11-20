@@ -37,10 +37,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => busy = true);
     try {
-      final data = await ApiClient.instance.post(
-        '/api/v1/auth/patient-login',
-        {'patient_id': pId},
-      );
+      final data = await ApiClient.instance.patientLogin(pId);
       await ApiClient.instance.setSession(Map<String, dynamic>.from(data));
 
       if (!mounted) return;
